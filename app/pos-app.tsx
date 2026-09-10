@@ -152,7 +152,7 @@ function Logo({ compact = false }: { compact?: boolean }) {
     <div className="brand-lockup">
       <Image
         className="brand-logo-image"
-        src="/cyberdev-logo.png"
+        src="/cyberdev-logo.svg"
         alt="Logo CyberDev Moch Rizky Febryanto"
         width={48}
         height={48}
