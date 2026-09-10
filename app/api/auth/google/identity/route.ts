@@ -8,9 +8,9 @@ import { HttpError, jsonBody, safeRoute } from "@/lib/http";
 const credentialSchema = z.object({ credential: z.string().min(100).max(12000) }).strict();
 
 export const GET = safeRoute(async request => {
+  if (!databaseRuntimeAvailable()) throw new HttpError(503,"Database production belum terhubung di Vercel.");
   await rateLimit(request,"google-identity-config",30,900000);
   if (!googleIdentityConfigured()) throw new HttpError(503,"Login Google belum diaktifkan.");
-  if (!databaseRuntimeAvailable()) throw new HttpError(503,"Database production belum terhubung di Vercel.");
   const user = await getCurrentUser(request);
   if (user?.role === "superadmin") throw new HttpError(403,"Login Google hanya tersedia untuk Client.");
   const state = randomToken(), browserToken = randomToken(), nonce = randomToken(), now = Date.now();
@@ -23,9 +23,9 @@ export const GET = safeRoute(async request => {
 });
 
 export const POST = safeRoute(async request => {
+  if (!databaseRuntimeAvailable()) throw new HttpError(503,"Database production belum terhubung di Vercel.");
   await rateLimit(request,"google-identity-login",30,900000);
   if (!googleIdentityConfigured()) throw new HttpError(503,"Login Google belum diaktifkan.");
-  if (!databaseRuntimeAvailable()) throw new HttpError(503,"Database production belum terhubung di Vercel.");
   const origin = request.headers.get("origin");
   if (!origin || origin !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") {
     throw new HttpError(403,"Asal permintaan tidak diizinkan.");
