@@ -5,11 +5,12 @@ import { createSession, getBootstrapAdmin, hashPassword, normalizeEmail, readCoo
 import { HttpError } from "@/lib/http";
 
 const googleKeys = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
+const CYBERDEV_GOOGLE_CLIENT_ID = "1013741790568-blcdv22epetjoldi4a5iefi99vm8ujr9.apps.googleusercontent.com";
 export const googleCookieName = "cyberdev_google_state";
 export const randomToken = () => randomBytes(32).toString("base64url");
 
 export function googleClientId() {
-  return (process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID || "").trim();
+  return (process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID || CYBERDEV_GOOGLE_CLIENT_ID).trim();
 }
 
 function googleClientSecret() {
