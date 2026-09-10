@@ -1,2 +1,2 @@
-import { googleConfigured } from "@/lib/google-auth";
-export async function GET() { return Response.json({google:googleConfigured()},{headers:{"cache-control":"no-store"}}); }
+import { googleIdentityConfigured } from "@/lib/google-auth";
+export async function GET() { return Response.json({google:googleIdentityConfigured()},{headers:{"cache-control":"no-store"}}); }

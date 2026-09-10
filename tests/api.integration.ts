@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { generateKeyPair, SignJWT } from "jose";
 import { env, closeDatabase } from "../lib/runtime-env";
 import * as register from "../app/api/auth/register/route";
 import * as login from "../app/api/auth/login/route";
@@ -25,6 +26,8 @@ import * as notifications from "../app/api/notifications/route";
 import * as imports from "../app/api/products/import/route";
 import { GET as startGoogle } from "../app/api/auth/google/route";
 import { GET as callback } from "../app/api/auth/google/callback/route";
+import * as googleIdentity from "../app/api/auth/google/identity/route";
+import { completeGoogleIdentityLogin } from "../lib/google-auth";
 
 let directory:string,adminCookie:string,ownerCookie:string,otherCookie:string,tenantId:string,otherTenant:string,productId:number;
 const password=randomBytes(24).toString("base64url")+"A1";
@@ -140,6 +143,35 @@ test("an existing legacy-length password can authenticate and then be upgraded",
   if(previous.email===undefined)delete process.env.ADMIN_EMAIL;else process.env.ADMIN_EMAIL=previous.email;
   if(previous.password===undefined)delete process.env.ADMIN_BOOTSTRAP_PASSWORD;else process.env.ADMIN_BOOTSTRAP_PASSWORD=previous.password;
   if(previous.phones===undefined)delete process.env.ADMIN_PHONE_ALIASES;else process.env.ADMIN_PHONE_ALIASES=previous.phones;
+});
+test("Google Identity config works without a client secret and is protected by nonce and role",async()=>{
+  const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,alias:process.env.AUTH_GOOGLE_SECRET,url:process.env.APP_URL};
+  process.env.GOOGLE_CLIENT_ID="1013741790568-qa.apps.googleusercontent.com";
+  delete process.env.GOOGLE_CLIENT_SECRET;delete process.env.AUTH_GOOGLE_SECRET;
+  process.env.APP_URL="http://localhost:3000";
+  const config=await googleIdentity.GET(request("auth/google/identity","GET",undefined,"","google-identity-config"));
+  assert.equal(config.status,200,JSON.stringify(await config.clone().json()));
+  const data=await config.json() as {clientId:string;nonce:string};
+  assert.equal(data.clientId,process.env.GOOGLE_CLIENT_ID);assert.ok(data.nonce.length>=40);
+  const googleCookie=session(config);
+  const {privateKey,publicKey}=await generateKeyPair("RS256");
+  const token=await new SignJWT({sub:"google-owner-subject",email:"google-owner@example.test",email_verified:true,nonce:data.nonce,name:"Google QA Owner"})
+    .setProtectedHeader({alg:"RS256"}).setIssuer("https://accounts.google.com").setAudience(data.clientId).setExpirationTime("2m").sign(privateKey);
+  const createdSession=await completeGoogleIdentityLogin(request("auth/google/identity","POST",undefined,googleCookie,"google-identity-valid"),token,publicKey);
+  const googleOwner=await (await me.GET(request("auth/me","GET",undefined,createdSession.cookie.split(";")[0]))).json();
+  assert.equal(googleOwner.user.role,"owner");assert.equal(googleOwner.user.tenantStatus,"demo");
+  await assert.rejects(completeGoogleIdentityLogin(request("auth/google/identity","POST",undefined,googleCookie,"google-identity-valid-replay"),token,publicKey));
+  const invalidConfig=await googleIdentity.GET(request("auth/google/identity","GET",undefined,"","google-identity-invalid-config"));
+  const invalidCookie=session(invalidConfig);
+  const invalid=await googleIdentity.POST(request("auth/google/identity","POST",{credential:"x".repeat(100)},invalidCookie,"google-identity-post"));
+  assert.equal(invalid.status,401,JSON.stringify(await invalid.clone().json()));
+  const replay=await googleIdentity.POST(request("auth/google/identity","POST",{credential:"x".repeat(100)},invalidCookie,"google-identity-replay"));
+  assert.equal(replay.status,400);
+  assert.equal((await googleIdentity.GET(request("auth/google/identity","GET",undefined,adminCookie,"google-identity-admin"))).status,403);
+  if(previous.id===undefined)delete process.env.GOOGLE_CLIENT_ID;else process.env.GOOGLE_CLIENT_ID=previous.id;
+  if(previous.secret===undefined)delete process.env.GOOGLE_CLIENT_SECRET;else process.env.GOOGLE_CLIENT_SECRET=previous.secret;
+  if(previous.alias===undefined)delete process.env.AUTH_GOOGLE_SECRET;else process.env.AUTH_GOOGLE_SECRET=previous.alias;
+  if(previous.url===undefined)delete process.env.APP_URL;else process.env.APP_URL=previous.url;
 });
 test("Google login is client-only even when an admin intent is requested",async()=>{
   const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,url:process.env.APP_URL};

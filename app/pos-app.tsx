@@ -66,6 +66,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GoogleIdentityButton } from "@/components/google-identity-button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -183,17 +184,6 @@ function LoginLogo() {
       priority
       sizes="(max-width: 640px) 76px, 92px"
     />
-  );
-}
-
-function GoogleIcon() {
-  return (
-    <svg className="size-5 google-login-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path fill="#4285F4" d="M21.35 12.2c0-.74-.06-1.28-.2-1.84H12v3.48h5.37a4.58 4.58 0 0 1-1.99 3.01v2.26h3.22c1.89-1.74 2.75-4.3 2.75-6.91Z" />
-      <path fill="#34A853" d="M12 21.7c2.7 0 4.96-.89 6.61-2.42l-3.22-2.26c-.89.6-2.03.96-3.39.96-2.6 0-4.8-1.76-5.59-4.12H3.08v2.33A9.99 9.99 0 0 0 12 21.7Z" />
-      <path fill="#FBBC05" d="M6.41 13.86A6 6 0 0 1 6.1 12c0-.65.11-1.28.31-1.86V7.81H3.08A10 10 0 0 0 2 12c0 1.62.39 3.15 1.08 4.19l3.33-2.33Z" />
-      <path fill="#EA4335" d="M12 6.02c1.47 0 2.79.51 3.83 1.5l2.87-2.87A9.66 9.66 0 0 0 12 2.3a9.99 9.99 0 0 0-8.92 5.51l3.33 2.33C7.2 7.78 9.4 6.02 12 6.02Z" />
-    </svg>
   );
 }
 
@@ -1096,22 +1086,23 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [googleEnabled,setGoogleEnabled]=useState(false);
   useEffect(()=>{
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 12000);
-    fetch("/api/auth/providers",{signal:controller.signal})
-      .then(async response=>response.ok ? response.json() : {google:false})
-      .then(data=>setGoogleEnabled(Boolean(data.google)))
-      .catch(()=>setGoogleEnabled(false))
-      .finally(()=>window.clearTimeout(timer));
     const message = new URLSearchParams(window.location.search).get("auth_error");
     if(message) {
       Promise.resolve().then(()=>setError(message));
       window.history.replaceState({},"",window.location.pathname);
     }
-    return ()=>{window.clearTimeout(timer);controller.abort();};
   },[]);
+  const finishGoogleLogin = useCallback(async () => {
+    const response = await fetchWithTimeout("/api/auth/me");
+    const data = await response.json().catch(()=>({user:null})) as {user:AppUser|null};
+    if (!response.ok || !data.user) throw new Error("Sesi Google tidak berhasil dibuat.");
+    if (data.user.role === "superadmin") {
+      await fetch("/api/auth/logout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+      throw new Error("Akun Super-Admin harus masuk melalui Login Admin.");
+    }
+    onAuthenticated(data.user);
+  },[onAuthenticated]);
   const captureLocation = () => {
     setLocationMessage("Mengambil lokasi perangkat...");
     if (!navigator.geolocation) return setLocationMessage("Lokasi tidak didukung. Isi alamat secara manual.");
@@ -1166,7 +1157,7 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
         <label className="login-label">Password<span className="password-input"><input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }} placeholder="Minimal 12 karakter, huruf + angka" autoComplete={mode !== "register" ? "current-password" : "new-password"} /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}>{showPassword ? <EyeOff/> : <Eye/>}</button></span></label>
         {error && <div className="auth-error">{error}</div>}
         <Button className={`login-submit ${mode==="admin"?"admin-auth-mode":""}`} disabled={loading} onClick={submit}>{loading ? "Memproses akun..." : mode === "register" ? "Daftar & mulai demo" : mode==="admin" ? "Masuk dashboard admin" : "Masuk dashboard client"} <ArrowRight /></Button>
-        {mode === "client"&&<><Button type="button" variant="outline" className="google-login" disabled={!googleEnabled||loading} onClick={()=>window.location.assign(new URL("/api/auth/google",window.location.origin).href)}><GoogleIcon/><span>Masuk dengan Google</span></Button>{!googleEnabled&&<small className="google-status">Login Google sedang menunggu konfigurasi OAuth production yang valid.</small>}</>}
+        {mode === "client"&&<GoogleIdentityButton disabled={loading} onSuccess={finishGoogleLogin}/>}
         {mode === "admin" && <div className="admin-login-hint"><div><Crown/><span><strong>Hanya dua nomor resmi & satu email admin</strong><small>Login Google dinonaktifkan untuk Admin. Password dapat diganti dari dashboard.</small></span></div><button onClick={() => setIdentifier(ADMIN_LOGIN_EMAIL)}>Email admin</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[0])}>WA 0822…</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[1])}>WA 0852…</button></div>}
         {mode === "register" && <p className="signup-copy">Sudah punya akun? <button onClick={() => setMode("client")}>Login Client</button></p>}
         <div className="login-assurance"><span><ShieldCheck /> Data terenkripsi</span><span><CloudOff /> Siap offline</span><span><Headphones /> CS 082244837977 / 085234005206</span></div>

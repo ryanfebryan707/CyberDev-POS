@@ -18,14 +18,14 @@ Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (disarankan mi
 
 ## Login Google
 
-Implementasi menggunakan authorization code, PKCE S256, state sekali pakai yang terikat cookie, nonce, verifikasi tanda tangan JWT, issuer, audience, expiry, dan email terverifikasi. Token akses Google tidak disimpan.
+Login Client utama memakai tombol resmi Google Identity Services. ID token diverifikasi di server (tanda tangan, issuer, audience, expiry, email terverifikasi, serta nonce sekali pakai yang terikat cookie). Token akses Google tidak diminta atau disimpan. Jalur OAuth authorization-code lama tetap tersedia sebagai kompatibilitas opsional, tetapi tidak dipakai oleh tombol login utama.
 
 - Di Google Cloud / Google Auth Platform, pilih proyek milik pengelola dan siapkan consent screen.
-- Buat OAuth client bertipe Web application. Authorized redirect URI harus **persis** `https://DOMAIN-ANDA/api/auth/google/callback`.
-- Untuk deployment resmi saat ini, redirect URI adalah `https://cyber-dev-pos.vercel.app/api/auth/google/callback` dan authorized JavaScript origin adalah `https://cyber-dev-pos.vercel.app`.
+- Buat OAuth client bertipe Web application. Untuk tombol Google Identity Services, tambahkan authorized JavaScript origin **persis** `https://cyber-dev-pos.vercel.app`.
+- Redirect URI `https://cyber-dev-pos.vercel.app/api/auth/google/callback` hanya diperlukan bila jalur authorization-code lama juga akan digunakan.
 - Client Secret berbeda dari Client ID dan tidak boleh ditempel ke source code, commit GitHub, atau percakapan.
-- Client ID CyberDev mempunyai fallback publik di kode. Simpan `GOOGLE_CLIENT_SECRET` yang asli sebagai Secret server Vercel; `GOOGLE_CLIENT_ID` tetap dapat digunakan untuk override. Atur `APP_URL` ke origin yang sama (atau gunakan URL sistem Vercel), kemudian redeploy.
-- Tanpa konfigurasi lengkap, tombol Google nonaktif. Jangan mengklaim koneksi Google selesai sebelum login nyata berhasil.
+- Client ID CyberDev mempunyai fallback publik di kode; `GOOGLE_CLIENT_ID` tetap dapat digunakan untuk override. Tombol utama tidak memerlukan Client Secret. Jika jalur OAuth lama digunakan, `GOOGLE_CLIENT_SECRET` harus berupa secret asli yang berbeda dari Client ID dan hanya disimpan sebagai Secret server Vercel.
+- Setelah mengubah origin atau environment, lakukan deployment baru. Jangan mengklaim koneksi Google selesai sebelum login nyata berhasil.
 - Google hanya tersedia untuk Client. Akun baru Google memperoleh toko demo kosong. Email client yang sudah mempunyai akun password harus login dengan password terlebih dahulu, kemudian memilih Tautkan akun Google di Pengaturan. Super-Admin tidak dapat memakai atau menautkan login Google. Tidak ada penggabungan akun otomatis berdasarkan kesamaan email.
 - Akun Google baru memakai login Google. Pemulihan password melalui email dan MFA belum tersedia.
 

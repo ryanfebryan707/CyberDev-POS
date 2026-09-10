@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { generateKeyPair, SignJWT } from "jose";
 import { NextRequest } from "next/server";
 import { hashPassword, verifyPassword, validateLoginPassword, validatePassword, clearSessionCookie } from "../lib/auth";
-import { googleAppOrigin, googleConfigured, verifyGoogleToken } from "../lib/google-auth";
+import { googleAppOrigin, googleConfigured, googleIdentityConfigured, verifyGoogleToken } from "../lib/google-auth";
 import { buildReceiptHtml } from "../lib/receipt";
 import { postgresQuery } from "../lib/runtime-env";
 import { parseProductNumber } from "../lib/spreadsheet";
@@ -30,10 +30,11 @@ test("Google token validation rejects wrong audience, nonce, issuer, expiry and 
     await assert.rejects(verifyGoogleToken(token,"valid-nonce",publicKey));
   }
 });
-test("Google login rejects a copied client id secret and derives the Vercel production origin",()=>{
+test("Google Identity needs only a valid client id while the legacy code flow rejects a copied secret",()=>{
   const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,url:process.env.APP_URL,vercel:process.env.VERCEL_PROJECT_PRODUCTION_URL};
   const id="1013741790568-example.apps.googleusercontent.com";
   process.env.GOOGLE_CLIENT_ID=id;process.env.GOOGLE_CLIENT_SECRET=id;delete process.env.APP_URL;process.env.VERCEL_PROJECT_PRODUCTION_URL="cyber-dev-pos.vercel.app";
+  assert.equal(googleIdentityConfigured(),true);
   assert.equal(googleConfigured(),false);
   process.env.GOOGLE_CLIENT_SECRET="GOCSPX-valid-shaped-secret";
   assert.equal(googleConfigured(),true);assert.equal(googleAppOrigin(),"https://cyber-dev-pos.vercel.app");
@@ -50,6 +51,8 @@ test("cross-origin, invalid JSON and oversized mutations are rejected",async()=>
   assert.equal((await proxy(request({origin:"http://localhost:3000","content-type":"application/json"},"{"))).status,400);
   assert.equal((await proxy(request({origin:"http://localhost:3000","content-type":"application/json"},JSON.stringify({name:"x".repeat(1048600)})))).status,413);
   assert.equal((await proxy(request({origin:"http://localhost:3000","content-type":"application/json"},'{"password":1234}'))).status,400);
+  process.env.APP_URL="https://stale-preview.example.test";
+  assert.equal((await proxy(request({origin:"http://localhost:3000","content-type":"application/json"},"{}"))).status,200);
 });
 test("receipt escapes user HTML and spreadsheet quantities preserve decimals",()=>{
   const html=buildReceiptHtml({transactionId:"T1",storeName:"<img src=x onerror=alert(1)>",cashierName:"Kasir",customerName:"<script>alert(1)</script>",createdAt:Date.now(),items:[],subtotal:100,tax:0,discount:0,total:100,paymentMethod:"Tunai",amountReceived:100,changeAmount:0});

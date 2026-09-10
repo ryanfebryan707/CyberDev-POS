@@ -43,6 +43,9 @@ export function googleConfigured() {
     && !clientSecret.includes(".apps.googleusercontent.com")
     && Boolean(googleAppOrigin());
 }
+export function googleIdentityConfigured() {
+  return /^\d+-[a-z0-9_-]+\.apps\.googleusercontent\.com$/i.test(googleClientId());
+}
 export function googleRedirectUri() { return `${googleAppOrigin()}/api/auth/google/callback`; }
 export function googleCookie(value: string, maxAge = 600) {
   return `${googleCookieName}=${value}; Path=/; HttpOnly; ${process.env.NODE_ENV === "production" ? "Secure; " : ""}SameSite=Lax; Max-Age=${maxAge}`;
@@ -54,23 +57,10 @@ export async function verifyGoogleToken(token: string, nonce: string, key: JWTVe
   return {subject: payload.sub, email: normalizeEmail(payload.email), name: typeof payload.name === "string" ? payload.name.slice(0, 80) : "Pemilik toko"};
 }
 
-export async function completeGoogleLogin(request: Request) {
-  const url = new URL(request.url);
-  const state = url.searchParams.get("state");
-  const browserToken = readCookie(request, googleCookieName);
-  if (!state || !browserToken) throw new HttpError(400, "Sesi login Google telah berakhir.");
-  const saved = await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash = ? AND browser_hash = ? AND expires_at > ? RETURNING nonce, verifier, user_id AS userId, intent")
-    .bind(await sha256(state), await sha256(browserToken), Date.now()).first<{nonce:string;verifier:string;userId:string|null;intent:"client"|"admin"}>();
-  if (!saved || url.searchParams.has("error") || !url.searchParams.get("code")) throw new HttpError(400, "Login Google dibatalkan atau sesi kedaluwarsa.");
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method:"POST", headers:{"content-type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({code:url.searchParams.get("code")!,client_id:googleClientId(),client_secret:googleClientSecret(),redirect_uri:googleRedirectUri(),grant_type:"authorization_code",code_verifier:saved.verifier}),
-    signal:AbortSignal.timeout(10000),
-  });
-  if (!response.ok) throw new HttpError(400, "Google belum dapat memverifikasi login.");
-  const tokens = await response.json() as {id_token?:string};
-  if (!tokens.id_token) throw new HttpError(400, "Token Google tidak tersedia.");
-  const identity = await verifyGoogleToken(tokens.id_token, saved.nonce);
+type SavedGoogleLogin = { userId: string | null; intent: "client" | "admin" };
+type GoogleIdentity = Awaited<ReturnType<typeof verifyGoogleToken>>;
+
+async function createGoogleSession(request: Request, identity: GoogleIdentity, saved: SavedGoogleLogin) {
   const userId = await env.DB.transaction(async () => {
     if (saved.intent !== "client") throw new HttpError(403,"Login Google hanya tersedia untuk Client.");
     const linked = await env.DB.prepare("SELECT u.id, u.is_active AS isActive, u.role FROM oauth_accounts a JOIN users u ON u.id=a.user_id WHERE a.provider='google' AND a.subject=?").bind(identity.subject).first<{id:string;isActive:number;role:string}>();
@@ -80,7 +70,6 @@ export async function completeGoogleLogin(request: Request) {
       return linked.id;
     }
     if (saved.userId) {
-      // Linking requires the SAME still-active login session and matching verified email.
       const { getCurrentUser } = await import("@/lib/auth");
       const current = await getCurrentUser(request);
       if (!current || current.id !== saved.userId || current.email !== identity.email) throw new HttpError(403,"Masuk kembali dan gunakan email Google yang sama.");
@@ -102,4 +91,42 @@ export async function completeGoogleLogin(request: Request) {
   });
   await env.DB.prepare("UPDATE users SET last_login_at=? WHERE id=?").bind(Date.now(),userId).run();
   return createSession(userId);
+}
+
+export async function completeGoogleIdentityLogin(request: Request, token: string, key: JWTVerifyGetKey | CryptoKey = googleKeys) {
+  const browserToken = readCookie(request, googleCookieName);
+  if (!browserToken || !/^[A-Za-z0-9_-]{40,60}$/.test(browserToken)) throw new HttpError(400,"Sesi login Google telah berakhir.");
+  const browserHash = await sha256(browserToken);
+  const candidate = await env.DB.prepare("SELECT state_hash AS stateHash FROM oauth_states WHERE browser_hash=? AND expires_at>? ORDER BY expires_at DESC LIMIT 1")
+    .bind(browserHash,Date.now()).first<{stateHash:string}>();
+  if (!candidate) throw new HttpError(400,"Sesi login Google telah berakhir.");
+  const saved = await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash=? AND browser_hash=? AND expires_at>? RETURNING nonce, user_id AS userId, intent")
+    .bind(candidate.stateHash,browserHash,Date.now()).first<{nonce:string;userId:string|null;intent:"client"|"admin"}>();
+  if (!saved) throw new HttpError(400,"Sesi login Google telah berakhir.");
+  let identity: GoogleIdentity;
+  try { identity = await verifyGoogleToken(token,saved.nonce,key); }
+  catch { throw new HttpError(401,"Identitas Google tidak valid."); }
+  return createGoogleSession(request,identity,saved);
+}
+
+export async function completeGoogleLogin(request: Request) {
+  const url = new URL(request.url);
+  const state = url.searchParams.get("state");
+  const browserToken = readCookie(request, googleCookieName);
+  if (!state || !browserToken) throw new HttpError(400, "Sesi login Google telah berakhir.");
+  const saved = await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash = ? AND browser_hash = ? AND expires_at > ? RETURNING nonce, verifier, user_id AS userId, intent")
+    .bind(await sha256(state), await sha256(browserToken), Date.now()).first<{nonce:string;verifier:string;userId:string|null;intent:"client"|"admin"}>();
+  if (!saved || url.searchParams.has("error") || !url.searchParams.get("code")) throw new HttpError(400, "Login Google dibatalkan atau sesi kedaluwarsa.");
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method:"POST", headers:{"content-type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams({code:url.searchParams.get("code")!,client_id:googleClientId(),client_secret:googleClientSecret(),redirect_uri:googleRedirectUri(),grant_type:"authorization_code",code_verifier:saved.verifier}),
+    signal:AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new HttpError(400, "Google belum dapat memverifikasi login.");
+  const tokens = await response.json() as {id_token?:string};
+  if (!tokens.id_token) throw new HttpError(400, "Token Google tidak tersedia.");
+  let identity: GoogleIdentity;
+  try { identity = await verifyGoogleToken(tokens.id_token, saved.nonce); }
+  catch { throw new HttpError(401,"Identitas Google tidak valid."); }
+  return createGoogleSession(request,identity,saved);
 }
