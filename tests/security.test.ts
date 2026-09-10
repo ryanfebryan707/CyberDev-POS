@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 import { hashPassword, verifyPassword, validateLoginPassword, validatePassword, clearSessionCookie } from "../lib/auth";
 import { googleAppOrigin, googleConfigured, googleIdentityConfigured, verifyGoogleToken } from "../lib/google-auth";
 import { buildReceiptHtml } from "../lib/receipt";
-import { postgresQuery } from "../lib/runtime-env";
+import { databaseConfigured, postgresQuery } from "../lib/runtime-env";
 import { parseProductNumber } from "../lib/spreadsheet";
 import { proxy } from "../proxy";
 
@@ -61,4 +61,15 @@ test("receipt escapes user HTML and spreadsheet quantities preserve decimals",()
 });
 test("SQL placeholders and camel-case aliases preserve literals",()=>{
   assert.equal(postgresQuery("SELECT '?' AS value, created_at AS createdAt FROM users WHERE id=?"),'SELECT \'?\' AS value, created_at AS "createdAt" FROM users WHERE id=$1');
+});
+test("database runtime recognizes pooled, unpooled, and Vercel/Neon connection parts",()=>{
+  const keys=["DATABASE_URL","POSTGRES_URL","POSTGRES_PRISMA_URL","DATABASE_URL_UNPOOLED","POSTGRES_URL_NON_POOLING","NEON_DATABASE_URL","PGHOST","PGUSER","PGPASSWORD","PGDATABASE","POSTGRES_HOST","POSTGRES_USER","POSTGRES_PASSWORD","POSTGRES_DATABASE"] as const;
+  const previous=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+  for(const key of keys)delete process.env[key];
+  assert.equal(databaseConfigured(),false);
+  process.env.DATABASE_URL_UNPOOLED="postgresql://qa:qa@localhost/qa";assert.equal(databaseConfigured(),true);
+  delete process.env.DATABASE_URL_UNPOOLED;
+  process.env.PGHOST="localhost";process.env.PGUSER="qa";process.env.PGPASSWORD="qa";process.env.PGDATABASE="qa";
+  assert.equal(databaseConfigured(),true);
+  for(const key of keys){const value=previous[key];if(value===undefined)delete process.env[key];else process.env[key]=value;}
 });

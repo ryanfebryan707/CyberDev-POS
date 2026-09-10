@@ -10,9 +10,29 @@ const context = new AsyncLocalStorage<Connection>();
 let pool: Pool | undefined;
 let local: Promise<import("@electric-sql/pglite").PGlite> | undefined;
 
-function configuredDatabaseUrl() {
-  return process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || "";
+function databaseUrlFromParts() {
+  const host = process.env.PGHOST || process.env.POSTGRES_HOST;
+  const user = process.env.PGUSER || process.env.POSTGRES_USER;
+  const password = process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD;
+  const databaseName = process.env.PGDATABASE || process.env.POSTGRES_DATABASE;
+  const port = process.env.PGPORT || "5432";
+  if (!host || !user || !password || !databaseName) return "";
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(databaseName)}?sslmode=${encodeURIComponent(process.env.PGSSLMODE || "require")}`;
 }
+
+function configuredDatabaseUrl() {
+  return process.env.DATABASE_URL
+    || process.env.POSTGRES_URL
+    || process.env.POSTGRES_PRISMA_URL
+    || process.env.DATABASE_URL_UNPOOLED
+    || process.env.POSTGRES_URL_NON_POOLING
+    || process.env.NEON_DATABASE_URL
+    || databaseUrlFromParts()
+    || "";
+}
+
+export function databaseConfigured() { return Boolean(configuredDatabaseUrl()); }
+export function databaseRuntimeAvailable() { return databaseConfigured() || process.env.NODE_ENV !== "production"; }
 
 export function postgresQuery(query: string) {
   let index = 0;

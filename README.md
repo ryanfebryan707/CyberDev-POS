@@ -11,7 +11,7 @@ Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (disarankan mi
 ## Deployment Vercel
 
 1. Import repositori ini di Vercel, root directory repositori, framework Next.js, Node.js 22.x.
-2. Isi environment server: `DATABASE_URL`, `APP_URL` (origin HTTPS domain final, tanpa path), dan `ADMIN_BOOTSTRAP_PASSWORD` untuk bootstrap pertama. Runtime juga mengenali `POSTGRES_URL`/`POSTGRES_PRISMA_URL` serta URL sistem Vercel sebagai fallback. Tidak ada variabel rahasia dengan awalan NEXT_PUBLIC.
+2. Isi environment server: `DATABASE_URL`, `APP_URL` (origin HTTPS domain final, tanpa path), dan `ADMIN_BOOTSTRAP_PASSWORD` untuk bootstrap pertama. Runtime juga mengenali format koneksi Vercel/Neon: `POSTGRES_URL`, `POSTGRES_PRISMA_URL`, `DATABASE_URL_UNPOOLED`, `POSTGRES_URL_NON_POOLING`, `NEON_DATABASE_URL`, atau gabungan `PGHOST`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`. Tidak ada variabel rahasia dengan awalan NEXT_PUBLIC.
 3. Untuk migrasi isi `DATABASE_URL_UNPOOLED` dengan koneksi langsung. Jalankan `npm run db:migrate`. Migrasi berada di `db/migrations`, tercatat pada `schema_migrations`, serta dijalankan dalam transaksi. Jangan gunakan skema SQL D1 versi lama pada PostgreSQL.
 4. Jalankan `npm run verify`. Deploy preview, periksa `/api/health`, login dan alur kasir, kemudian deploy production. Gunakan database preview terpisah untuk pengujian.
 5. Setelah admin pertama berhasil masuk, hapus bootstrap password dari environment dan redeploy.
