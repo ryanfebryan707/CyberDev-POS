@@ -10,6 +10,10 @@ const context = new AsyncLocalStorage<Connection>();
 let pool: Pool | undefined;
 let local: Promise<import("@electric-sql/pglite").PGlite> | undefined;
 
+function configuredDatabaseUrl() {
+  return process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || "";
+}
+
 export function postgresQuery(query: string) {
   let index = 0;
   // Application SQL is static; only values are ever bound. Preserve quoted strings.
@@ -34,21 +38,22 @@ async function localDb() {
 }
 
 function getPool() {
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-  pool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: 5, idleTimeoutMillis: 20000, connectionTimeoutMillis: 10000 });
+  const connectionString = configuredDatabaseUrl();
+  if (!connectionString) throw new Error("DATABASE_URL is required");
+  pool ??= new Pool({ connectionString, max: 5, idleTimeoutMillis: 20000, connectionTimeoutMillis: 10000 });
   return pool;
 }
 
 async function query(sql: string, values: unknown[] = []): Promise<QueryResult> {
   const connection = context.getStore();
   if (connection) return connection.query(sql, values);
-  if (process.env.DATABASE_URL) return getPool().query(sql, values);
+  if (configuredDatabaseUrl()) return getPool().query(sql, values);
   return (await localDb()).query(sql, values) as Promise<QueryResult>;
 }
 
 export async function transaction<T>(work: () => Promise<T>): Promise<T> {
   if (context.getStore()) return work();
-  if (!process.env.DATABASE_URL) {
+  if (!configuredDatabaseUrl()) {
     const db = await localDb();
     return db.transaction(tx => context.run(tx as Connection, work));
   }

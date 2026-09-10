@@ -9,7 +9,7 @@ import {
   normalizePhone,
   phoneLoginVariants,
   sha256,
-  validatePassword,
+  validateLoginPassword,
   verifyPassword,
 } from "@/lib/auth";
 
@@ -77,7 +77,7 @@ async function POSTHandler(request: Request) {
     const email = isEmail ? normalizeEmail(rawIdentifier) : "";
     const phone = isEmail ? "" : normalizePhone(rawIdentifier);
     const password = body.password || "";
-    if ((!email && !phone) || !validatePassword(password)) {
+    if ((!email && !phone) || !validateLoginPassword(password)) {
       return Response.json({ error: "Email/nomor WhatsApp atau password tidak valid." }, { status: 400 });
     }
     const now = Date.now();

@@ -1,4 +1,5 @@
 import { env } from "@/lib/runtime-env";
+import { ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PHONES } from "@/lib/admin-identity";
 
 const SESSION_COOKIE = "cyberdev_session";
 const SESSION_DAYS = 7;
@@ -101,16 +102,25 @@ export function validatePassword(value: string) {
   return typeof value === "string" && value.length >= 12 && value.length <= 128 && /[A-Za-z]/.test(value) && /\d/.test(value);
 }
 
+export function validateLoginPassword(value: string) {
+  // Strength rules apply when a password is created or changed. Login must
+  // continue accepting an existing legacy password so it can be upgraded.
+  return typeof value === "string" && value.length > 0 && value.length <= 128;
+}
+
 export function getBootstrapAdmin() {
   const runtime = env as RuntimeEnv;
-  const phoneAliases = (runtime.ADMIN_PHONE_ALIASES || "")
+  const productionIdentityLocked = process.env.NODE_ENV === "production";
+  const configuredPhones = (runtime.ADMIN_PHONE_ALIASES || "")
     .split(",")
     .map(normalizePhone)
     .filter(Boolean);
   return {
-    email: normalizeEmail(runtime.ADMIN_EMAIL || ""),
+    email: productionIdentityLocked ? ADMIN_LOGIN_EMAIL : normalizeEmail(runtime.ADMIN_EMAIL || ADMIN_LOGIN_EMAIL),
     password: runtime.ADMIN_BOOTSTRAP_PASSWORD || "",
-    phoneAliases: Array.from(new Set(phoneAliases)),
+    phoneAliases: productionIdentityLocked
+      ? ADMIN_LOGIN_PHONES.map(normalizePhone)
+      : configuredPhones.length ? Array.from(new Set(configuredPhones)) : ADMIN_LOGIN_PHONES.map(normalizePhone),
   };
 }
 

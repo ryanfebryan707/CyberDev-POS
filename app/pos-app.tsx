@@ -91,6 +91,7 @@ import { cacheProductsOffline, flushOfflineTransactions, loadProductsOffline, sa
 import { connectEscPosPrinter, getAuthorizedPrinterName, openEscPosCashDrawer, printEscPosReceipt } from "@/lib/cash-drawer";
 import { businessTypeLabel, businessTypes } from "@/lib/business-types";
 import { buildReceiptHtml, buildReceiptText, type ReceiptData } from "@/lib/receipt";
+import { ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PHONES } from "@/lib/admin-identity";
 
 type IconType = ComponentType<{ className?: string }>;
 type View = "overview" | "pos" | "products" | "reports" | "customers" | "staff" | "billing" | "settings" | "admin";
@@ -1165,10 +1166,8 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
         <label className="login-label">Password<span className="password-input"><input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }} placeholder="Minimal 12 karakter, huruf + angka" autoComplete={mode !== "register" ? "current-password" : "new-password"} /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}>{showPassword ? <EyeOff/> : <Eye/>}</button></span></label>
         {error && <div className="auth-error">{error}</div>}
         <Button className={`login-submit ${mode==="admin"?"admin-auth-mode":""}`} disabled={loading} onClick={submit}>{loading ? "Memproses akun..." : mode === "register" ? "Daftar & mulai demo" : mode==="admin" ? "Masuk dashboard admin" : "Masuk dashboard client"} <ArrowRight /></Button>
-        <Button type="button" variant="outline" className="google-login" disabled={!googleEnabled||loading} onClick={()=>{const url=new URL("/api/auth/google",window.location.origin);url.searchParams.set("intent",mode==="admin"?"admin":"client");window.location.assign(url.href);}}><GoogleIcon/><span>{mode==="admin"?"Masuk Admin dengan Google":"Masuk dengan Google"}</span></Button>
-        {!googleEnabled&&<small className="google-status">Login Google menunggu Client ID dan Client Secret OAuth yang valid.</small>}
-        {mode==="admin"&&googleEnabled&&<small className="google-status">Google Admin hanya dapat digunakan setelah akun Google ditautkan dari Pengaturan keamanan.</small>}
-        {mode === "admin" && <div className="admin-login-hint"><div><Crown/><span><strong>Hanya dua nomor resmi & satu email admin</strong><small>Password tidak ditampilkan dan dapat diganti dari dashboard.</small></span></div><button onClick={() => setIdentifier("riskyfebryanto12@gmail.com")}>Email admin</button><button onClick={() => setIdentifier("082244837977")}>WA 0822…</button><button onClick={() => setIdentifier("085234005206")}>WA 0852…</button></div>}
+        {mode === "client"&&<><Button type="button" variant="outline" className="google-login" disabled={!googleEnabled||loading} onClick={()=>window.location.assign(new URL("/api/auth/google",window.location.origin).href)}><GoogleIcon/><span>Masuk dengan Google</span></Button>{!googleEnabled&&<small className="google-status">Login Google sedang menunggu konfigurasi OAuth production yang valid.</small>}</>}
+        {mode === "admin" && <div className="admin-login-hint"><div><Crown/><span><strong>Hanya dua nomor resmi & satu email admin</strong><small>Login Google dinonaktifkan untuk Admin. Password dapat diganti dari dashboard.</small></span></div><button onClick={() => setIdentifier(ADMIN_LOGIN_EMAIL)}>Email admin</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[0])}>WA 0822…</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[1])}>WA 0852…</button></div>}
         {mode === "register" && <p className="signup-copy">Sudah punya akun? <button onClick={() => setMode("client")}>Login Client</button></p>}
         <div className="login-assurance"><span><ShieldCheck /> Data terenkripsi</span><span><CloudOff /> Siap offline</span><span><Headphones /> CS 082244837977 / 085234005206</span></div>
       </div>

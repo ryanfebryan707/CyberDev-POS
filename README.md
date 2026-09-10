@@ -6,12 +6,12 @@ Perbaikan dari arsip v12.1. Server Cloudflare D1 telah diganti dengan Next.js da
 
 Gunakan Node.js 22 atau 24. Jalankan `npm ci`, kemudian `npm run dev`. Tanpa DATABASE_URL, mode development memakai PostgreSQL PGlite di `.data/cyberdev`. Mode production **wajib** menggunakan PostgreSQL eksternal dan tidak pernah memakai database lokal sebagai fallback.
 
-Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (minimal 12 karakter dengan huruf dan angka), serta `APP_URL=http://localhost:3000` dalam `.env.local`. Isi menggunakan nilai Anda sendiri. Email yang ditentukan dikhususkan untuk admin. Login pertama membuat akun admin; setelah itu hapus `ADMIN_BOOTSTRAP_PASSWORD` dari environment. Password lama tidak dapat direset lewat bootstrap setelah akun dibuat.
+Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (disarankan minimal 12 karakter), serta `APP_URL=http://localhost:3000` dalam `.env.local`. Identitas login Admin production dikunci di `lib/admin-identity.ts`; password hanya disimpan sebagai hash di database dan dapat diganti dari dashboard. Login tetap menerima password lama maksimal 128 karakter agar akun lama dapat masuk lalu meningkatkan passwordnya.
 
 ## Deployment Vercel
 
 1. Import repositori ini di Vercel, root directory repositori, framework Next.js, Node.js 22.x.
-2. Isi environment server: `DATABASE_URL`, `APP_URL` (origin HTTPS domain final, tanpa path), `ADMIN_EMAIL`, dan `ADMIN_BOOTSTRAP_PASSWORD`. `ADMIN_PHONE_ALIASES` opsional. Tidak ada variabel rahasia dengan awalan NEXT_PUBLIC.
+2. Isi environment server: `DATABASE_URL`, `APP_URL` (origin HTTPS domain final, tanpa path), dan `ADMIN_BOOTSTRAP_PASSWORD` untuk bootstrap pertama. Runtime juga mengenali `POSTGRES_URL`/`POSTGRES_PRISMA_URL` serta URL sistem Vercel sebagai fallback. Tidak ada variabel rahasia dengan awalan NEXT_PUBLIC.
 3. Untuk migrasi isi `DATABASE_URL_UNPOOLED` dengan koneksi langsung. Jalankan `npm run db:migrate`. Migrasi berada di `db/migrations`, tercatat pada `schema_migrations`, serta dijalankan dalam transaksi. Jangan gunakan skema SQL D1 versi lama pada PostgreSQL.
 4. Jalankan `npm run verify`. Deploy preview, periksa `/api/health`, login dan alur kasir, kemudian deploy production. Gunakan database preview terpisah untuk pengujian.
 5. Setelah admin pertama berhasil masuk, hapus bootstrap password dari environment dan redeploy.
@@ -26,7 +26,7 @@ Implementasi menggunakan authorization code, PKCE S256, state sekali pakai yang 
 - Client Secret berbeda dari Client ID dan tidak boleh ditempel ke source code, commit GitHub, atau percakapan.
 - Masukkan `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` sebagai environment server Vercel. Atur APP_URL ke origin yang sama, kemudian redeploy.
 - Tanpa konfigurasi lengkap, tombol Google nonaktif. Jangan mengklaim koneksi Google selesai sebelum login nyata berhasil.
-- Akun baru Google memperoleh toko demo kosong. Email yang sudah mempunyai akun password harus login dengan password terlebih dahulu, kemudian memilih Tautkan akun Google di Pengaturan. Akun admin hanya dapat ditautkan dari sesi admin yang sah. Tidak ada penggabungan akun otomatis berdasarkan kesamaan email.
+- Google hanya tersedia untuk Client. Akun baru Google memperoleh toko demo kosong. Email client yang sudah mempunyai akun password harus login dengan password terlebih dahulu, kemudian memilih Tautkan akun Google di Pengaturan. Super-Admin tidak dapat memakai atau menautkan login Google. Tidak ada penggabungan akun otomatis berdasarkan kesamaan email.
 - Akun Google baru memakai login Google. Pemulihan password melalui email dan MFA belum tersedia.
 
 ## Fitur yang tersimpan

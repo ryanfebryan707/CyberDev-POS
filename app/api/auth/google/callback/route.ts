@@ -1,9 +1,9 @@
-import { completeGoogleLogin, googleConfigured, googleCookie } from "@/lib/google-auth";
+import { completeGoogleLogin, googleAppOrigin, googleConfigured, googleCookie } from "@/lib/google-auth";
 import { HttpError } from "@/lib/http";
 
 export async function GET(request: Request) {
   if (!googleConfigured()) return Response.json({error:"Login Google belum diaktifkan."},{status:503});
-  const target = new URL(process.env.APP_URL!);
+  const target = new URL(googleAppOrigin());
   const headers = new Headers({"cache-control":"no-store"});
   headers.append("set-cookie",googleCookie("",0));
   try {

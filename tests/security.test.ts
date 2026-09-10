@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPair, SignJWT } from "jose";
 import { NextRequest } from "next/server";
-import { hashPassword, verifyPassword, validatePassword, clearSessionCookie } from "../lib/auth";
-import { googleConfigured, verifyGoogleToken } from "../lib/google-auth";
+import { hashPassword, verifyPassword, validateLoginPassword, validatePassword, clearSessionCookie } from "../lib/auth";
+import { googleAppOrigin, googleConfigured, verifyGoogleToken } from "../lib/google-auth";
 import { buildReceiptHtml } from "../lib/receipt";
 import { postgresQuery } from "../lib/runtime-env";
 import { parseProductNumber } from "../lib/spreadsheet";
@@ -15,6 +15,7 @@ test("passwords have independent salts, verify correctly, and reject weak input"
   assert.equal(await verifyPassword("CorrectLongPassword12",a.hash,a.salt),true);
   assert.equal(await verifyPassword("DifferentPassword12",a.hash,a.salt),false);
   assert.equal(validatePassword("short1"),false);assert.equal(validatePassword("OnlyLettersLong"),false);
+  assert.equal(validateLoginPassword("Legacy800!"),true);assert.equal(validateLoginPassword(""),false);assert.equal(validateLoginPassword("x".repeat(129)),false);
   assert.match(clearSessionCookie(),/HttpOnly.*SameSite=Lax/);
 });
 test("Google token validation rejects wrong audience, nonce, issuer, expiry and unverified email",async()=>{
@@ -29,16 +30,17 @@ test("Google token validation rejects wrong audience, nonce, issuer, expiry and 
     await assert.rejects(verifyGoogleToken(token,"valid-nonce",publicKey));
   }
 });
-test("Google login stays disabled for a copied client id used as the secret",()=>{
-  const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,url:process.env.APP_URL};
+test("Google login rejects a copied client id secret and derives the Vercel production origin",()=>{
+  const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,url:process.env.APP_URL,vercel:process.env.VERCEL_PROJECT_PRODUCTION_URL};
   const id="1013741790568-example.apps.googleusercontent.com";
-  process.env.GOOGLE_CLIENT_ID=id;process.env.GOOGLE_CLIENT_SECRET=id;process.env.APP_URL="https://cyber-dev-pos.vercel.app";
+  process.env.GOOGLE_CLIENT_ID=id;process.env.GOOGLE_CLIENT_SECRET=id;delete process.env.APP_URL;process.env.VERCEL_PROJECT_PRODUCTION_URL="cyber-dev-pos.vercel.app";
   assert.equal(googleConfigured(),false);
   process.env.GOOGLE_CLIENT_SECRET="GOCSPX-valid-shaped-secret";
-  assert.equal(googleConfigured(),true);
+  assert.equal(googleConfigured(),true);assert.equal(googleAppOrigin(),"https://cyber-dev-pos.vercel.app");
   if(previous.id===undefined)delete process.env.GOOGLE_CLIENT_ID;else process.env.GOOGLE_CLIENT_ID=previous.id;
   if(previous.secret===undefined)delete process.env.GOOGLE_CLIENT_SECRET;else process.env.GOOGLE_CLIENT_SECRET=previous.secret;
   if(previous.url===undefined)delete process.env.APP_URL;else process.env.APP_URL=previous.url;
+  if(previous.vercel===undefined)delete process.env.VERCEL_PROJECT_PRODUCTION_URL;else process.env.VERCEL_PROJECT_PRODUCTION_URL=previous.vercel;
 });
 test("cross-origin, invalid JSON and oversized mutations are rejected",async()=>{
   process.env.APP_URL="http://localhost:3000";

@@ -129,7 +129,19 @@ test("password changes and logout revoke cookies; brute-force is throttled",asyn
   assert.equal((await logout.POST(request("auth/logout","POST",{},ownerCookie))).status,200);
   assert.equal((await (await me.GET(request("auth/me","GET",undefined,ownerCookie))).json()).user,null);
 });
-test("Google login records the selected admin portal intent",async()=>{
+test("an existing legacy-length password can authenticate and then be upgraded",async()=>{
+  const previous={email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_BOOTSTRAP_PASSWORD,phones:process.env.ADMIN_PHONE_ALIASES};
+  const legacyPassword="Legacy8007!";
+  process.env.ADMIN_EMAIL="legacy-admin@example.test";process.env.ADMIN_BOOTSTRAP_PASSWORD=legacyPassword;process.env.ADMIN_PHONE_ALIASES="083333333333";
+  const logged=await login.POST(request("auth/login","POST",{identifier:process.env.ADMIN_EMAIL,password:legacyPassword},"","legacy-admin"));
+  assert.equal(logged.status,200,JSON.stringify(await logged.clone().json()));
+  const changed=await passwords.POST(request("auth/change-password","POST",{currentPassword:legacyPassword,newPassword:password+"9"},session(logged),"legacy-admin-change"));
+  assert.equal(changed.status,200,JSON.stringify(await changed.clone().json()));
+  if(previous.email===undefined)delete process.env.ADMIN_EMAIL;else process.env.ADMIN_EMAIL=previous.email;
+  if(previous.password===undefined)delete process.env.ADMIN_BOOTSTRAP_PASSWORD;else process.env.ADMIN_BOOTSTRAP_PASSWORD=previous.password;
+  if(previous.phones===undefined)delete process.env.ADMIN_PHONE_ALIASES;else process.env.ADMIN_PHONE_ALIASES=previous.phones;
+});
+test("Google login is client-only even when an admin intent is requested",async()=>{
   const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,url:process.env.APP_URL};
   process.env.GOOGLE_CLIENT_ID="1013741790568-qa.apps.googleusercontent.com";
   process.env.GOOGLE_CLIENT_SECRET="GOCSPX-qa-valid-secret";
@@ -138,12 +150,15 @@ test("Google login records the selected admin portal intent",async()=>{
   assert.equal(response.status,302);
   assert.match(response.headers.get("location")||"",/^https:\/\/accounts\.google\.com\//);
   const state=await env.DB.prepare("SELECT intent FROM oauth_states ORDER BY expires_at DESC LIMIT 1").first<{intent:string}>();
-  assert.equal(state?.intent,"admin");
+  assert.equal(state?.intent,"client");
+  const adminResponse=await startGoogle(request("auth/google?intent=admin","GET",undefined,adminCookie,"oauth-admin"));
+  assert.equal(adminResponse.status,403);
   if(previous.id===undefined)delete process.env.GOOGLE_CLIENT_ID;else process.env.GOOGLE_CLIENT_ID=previous.id;
   if(previous.secret===undefined)delete process.env.GOOGLE_CLIENT_SECRET;else process.env.GOOGLE_CLIENT_SECRET=previous.secret;
   if(previous.url===undefined)delete process.env.APP_URL;else process.env.APP_URL=previous.url;
 });
 test("Google callback fails closed without credentials",async()=>{
+  delete process.env.AUTH_GOOGLE_SECRET;
   delete process.env.GOOGLE_CLIENT_SECRET;
   assert.equal((await callback(request("auth/google/callback?state=forged&code=forged"))).status,503);
 });
