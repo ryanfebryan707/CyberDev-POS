@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">CyberDev</title>
+  <defs>
+    <linearGradient id="blue" x1="8" y1="8" x2="52" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24C8FF"/>
+      <stop offset="1" stop-color="#0068FF"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="24" y1="13" x2="54" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FCFF"/>
+      <stop offset="1" stop-color="#72849B"/>
+    </linearGradient>
+  </defs>
+  <path d="M31 5 10 8 3 22l6 28 22 9 16-8-6-8-11 6-12-5-4-20 4-7 20-2 5-9Z" fill="url(#blue)"/>
+  <path d="M31 19h15c9 0 15 6 15 14s-6 15-15 15H31l6-10h9c3 0 5-2 5-5s-2-5-5-5H25Z" fill="url(#silver)"/>
+  <path d="M33 10 18 35h13l-6 19 22-30H34l8-14Z" fill="#071425" stroke="#41D1FF" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>
