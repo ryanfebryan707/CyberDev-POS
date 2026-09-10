@@ -58,6 +58,24 @@ test("new owners start with empty stock; private APIs reject anonymous and cross
   assert.equal((await admin.GET(request("admin/clients","GET",undefined,ownerCookie))).status,403);
   assert.deepEqual((await (await products.GET(request("products","GET",undefined,ownerCookie))).json()).products,[]);
 });
+test("clients created by Admin can log in with either email or phone",async()=>{
+  const email="admin-created@example.test",phone="083456789012";
+  const created=await admin.POST(request("admin/clients","POST",{
+    ownerName:"Admin Created Owner",storeName:"Admin Created Store",email,phone,password,
+    planCode:"demo",businessType:"general",address:"QA Address",city:"QA City",
+  },adminCookie,"admin-create-client"));
+  assert.equal(created.status,201,JSON.stringify(await created.clone().json()));
+  const createdData=await created.json() as {tenantId:string;status:string};
+  assert.equal(createdData.status,"demo");
+  for(const [identifier,ip] of [[email,"admin-client-email"],[phone,"admin-client-phone"]] as const){
+    const logged=await login.POST(request("auth/login","POST",{identifier,password},"",ip));
+    assert.equal(logged.status,200,JSON.stringify(await logged.clone().json()));
+    const profile=await (await me.GET(request("auth/me","GET",undefined,session(logged)))).json();
+    assert.equal(profile.user.role,"owner");
+    assert.equal(profile.user.tenantId,createdData.tenantId);
+    assert.equal(profile.user.tenantStatus,"demo");
+  }
+});
 test("product CRUD and customer edits are isolated by tenant",async()=>{
   const response=await products.POST(request("products","POST",{name:"QA Product",category:"QA",barcode:"QA-01",price:10000,cost:4000,stock:2,unit:"pcs"},ownerCookie));
   assert.equal(response.status,201);productId=Number((await response.json()).id);
