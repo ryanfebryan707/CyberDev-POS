@@ -8,6 +8,7 @@ import { buildReceiptHtml } from "../lib/receipt";
 import { databaseConfigured, postgresQuery } from "../lib/runtime-env";
 import { parseProductNumber } from "../lib/spreadsheet";
 import { proxy } from "../proxy";
+import nextConfig from "../next.config";
 
 test("passwords have independent salts, verify correctly, and reject weak input",async()=>{
   const a=await hashPassword("CorrectLongPassword12"),b=await hashPassword("CorrectLongPassword12");
@@ -42,6 +43,14 @@ test("Google Identity needs only a valid client id while the legacy code flow re
   if(previous.secret===undefined)delete process.env.GOOGLE_CLIENT_SECRET;else process.env.GOOGLE_CLIENT_SECRET=previous.secret;
   if(previous.url===undefined)delete process.env.APP_URL;else process.env.APP_URL=previous.url;
   if(previous.vercel===undefined)delete process.env.VERCEL_PROJECT_PRODUCTION_URL;else process.env.VERCEL_PROJECT_PRODUCTION_URL=previous.vercel;
+});
+test("security headers allow the official Google popup without allowing the app to be framed",async()=>{
+  const rules=await nextConfig.headers?.();
+  assert.ok(rules);
+  const headers=new Map(rules.flatMap(rule=>rule.headers.map(header=>[header.key,header.value] as const)));
+  assert.equal(headers.get("Cross-Origin-Opener-Policy"),"same-origin-allow-popups");
+  assert.equal(headers.get("X-Frame-Options"),"DENY");
+  assert.match(headers.get("Content-Security-Policy")||"",/accounts\.google\.com/);
 });
 test("cross-origin, invalid JSON and oversized mutations are rejected",async()=>{
   process.env.APP_URL="http://localhost:3000";
