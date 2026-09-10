@@ -695,6 +695,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .login-brand { display: flex; align-items: center; justify-content: space-between; }
 .login-brand .brand-lockup strong { color: #17182a; }
 .login-brand > span { color: #8b90a2; font-size: 9px; }
+.login-logo-image { width: clamp(96px, 9vw, 124px); height: clamp(96px, 9vw, 124px); object-fit: cover; border-radius: 22px; box-shadow: 0 16px 38px rgba(0,106,255,.18); }
 .login-form-wrap { width: 100%; max-width: 455px; margin: auto; padding: 34px 0 25px; }
 .login-eyebrow { display: flex; align-items: center; gap: 5px; color: var(--brand); font-size: 8px; font-weight: 900; letter-spacing: 1px; }
 .login-eyebrow svg { width: 13px; }
@@ -999,6 +1000,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .login-shell { display: block; background: white; }
   .login-panel { min-height: 100vh; padding: 22px 22px 18px; }
   .login-brand > span { display: none; }
+  .login-logo-image { width: 92px; height: 92px; border-radius: 18px; }
   .login-form-wrap { max-width: 430px; padding: 40px 0 24px; }
   .login-form-wrap h1 { font-size: 35px; }
   .login-showcase { display: none; }

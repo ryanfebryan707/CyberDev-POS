@@ -147,6 +147,13 @@ const planOptions: PlanOption[] = [
 const formatPrice = (value: number) => `Rp${new Intl.NumberFormat("id-ID").format(value)}`;
 const emptyProductForm = { name: "", category: "Lainnya", price: "", cost: "0", stock: "0", barcode: "", unit: "pcs" };
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(input, { ...init, signal: controller.signal }); }
+  finally { window.clearTimeout(timer); }
+}
+
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <div className="brand-lockup">
@@ -161,6 +168,20 @@ function Logo({ compact = false }: { compact?: boolean }) {
       />
       {!compact && <div><strong>CyberDev</strong><span>POS</span></div>}
     </div>
+  );
+}
+
+function LoginLogo() {
+  return (
+    <Image
+      className="login-logo-image"
+      src="/cyberdev-brand.jpg"
+      alt="CyberDev — Moch Rizky Febryanto"
+      width={160}
+      height={160}
+      priority
+      sizes="(max-width: 640px) 96px, 124px"
+    />
   );
 }
 
@@ -1064,7 +1085,21 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [googleEnabled,setGoogleEnabled]=useState(false);
-  useEffect(()=>{fetch("/api/auth/providers").then(res=>res.json()).then(data=>setGoogleEnabled(Boolean(data.google))).catch(()=>undefined);Promise.resolve(new URLSearchParams(window.location.search).get("auth_error")).then(message=>{if(message)setError(message);});},[]);
+  useEffect(()=>{
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 12000);
+    fetch("/api/auth/providers",{signal:controller.signal})
+      .then(async response=>response.ok ? response.json() : {google:false})
+      .then(data=>setGoogleEnabled(Boolean(data.google)))
+      .catch(()=>setGoogleEnabled(false))
+      .finally(()=>window.clearTimeout(timer));
+    const message = new URLSearchParams(window.location.search).get("auth_error");
+    if(message) {
+      Promise.resolve().then(()=>setError(message));
+      window.history.replaceState({},"",window.location.pathname);
+    }
+    return ()=>{window.clearTimeout(timer);controller.abort();};
+  },[]);
   const captureLocation = () => {
     setLocationMessage("Mengambil lokasi perangkat...");
     if (!navigator.geolocation) return setLocationMessage("Lokasi tidak didukung. Isi alamat secara manual.");
@@ -1076,14 +1111,15 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(mode === "register" ? "/api/auth/register" : "/api/auth/login", {
+      const response = await fetchWithTimeout(mode === "register" ? "/api/auth/register" : "/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name, storeName, businessType, phone, email, identifier, password, address, city, latitude, longitude }),
-      });
-      const result = (await response.json()) as { error?: string };
+      }, 20000);
+      const result = await response.json().catch(()=>({error:"Respons server tidak valid."})) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Permintaan tidak dapat diproses.");
-      const me = await fetch("/api/auth/me").then(res => res.json()) as { user: AppUser | null };
+      const meResponse = await fetchWithTimeout("/api/auth/me");
+      const me = await meResponse.json().catch(()=>({user:null})) as { user: AppUser | null };
       if (!me.user) throw new Error("Sesi login tidak berhasil dibuat.");
       if (mode === "admin" && me.user.role !== "superadmin") {
         await fetch("/api/auth/logout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
@@ -1095,14 +1131,14 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
       }
       onAuthenticated(me.user);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Terjadi kesalahan.");
+      setError(reason instanceof DOMException && reason.name === "AbortError" ? "Server terlalu lama merespons. Periksa koneksi lalu coba kembali." : reason instanceof Error ? reason.message : "Terjadi kesalahan.");
     } finally {
       setLoading(false);
     }
   };
   return <main className="login-shell">
     <section className="login-panel">
-      <div className="login-brand"><Logo /><span>Kasir pintar. Bisnis lebih untung.</span></div>
+      <div className="login-brand"><LoginLogo /><span>Kasir pintar. Bisnis lebih untung.</span></div>
       <div className="login-form-wrap">
         <span className="login-eyebrow">{mode==="admin"?<><Crown/> PORTAL KHUSUS PEMILIK PRODUK</>:<><Sparkles /> PENDAFTARAN ONLINE • DEMO 14 HARI</>}</span>
         <h1>{mode === "register" ? <>Buat toko POS<br/><em>secara otomatis</em></> : mode==="admin" ? <>Login khusus<br/><em>Super-Admin</em></> : <>Login Client<br/><em>CyberDev POS</em></>}</h1>
@@ -1118,7 +1154,9 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
         <label className="login-label">Password<span className="password-input"><input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }} placeholder="Minimal 12 karakter, huruf + angka" autoComplete={mode !== "register" ? "current-password" : "new-password"} /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}>{showPassword ? <EyeOff/> : <Eye/>}</button></span></label>
         {error && <div className="auth-error">{error}</div>}
         <Button className={`login-submit ${mode==="admin"?"admin-auth-mode":""}`} disabled={loading} onClick={submit}>{loading ? "Memproses akun..." : mode === "register" ? "Daftar & mulai demo" : mode==="admin" ? "Masuk dashboard admin" : "Masuk dashboard client"} <ArrowRight /></Button>
-        {mode!=="admin"&&<><Button type="button" variant="outline" className="google-login" disabled={!googleEnabled||loading} onClick={()=>{window.location.assign(new URL("/api/auth/google",window.location.origin).href);}}>Masuk dengan Google</Button>{!googleEnabled&&<small className="google-status">Login Google menunggu aktivasi pengelola.</small>}</>}
+        <Button type="button" variant="outline" className="google-login" disabled={!googleEnabled||loading} onClick={()=>{const url=new URL("/api/auth/google",window.location.origin);url.searchParams.set("intent",mode==="admin"?"admin":"client");window.location.assign(url.href);}}>{mode==="admin"?"Masuk Admin dengan Google":"Masuk dengan Google"}</Button>
+        {!googleEnabled&&<small className="google-status">Login Google menunggu Client ID dan Client Secret OAuth yang valid.</small>}
+        {mode==="admin"&&googleEnabled&&<small className="google-status">Google Admin hanya dapat digunakan setelah akun Google ditautkan dari Pengaturan keamanan.</small>}
         {mode === "admin" && <div className="admin-login-hint"><div><Crown/><span><strong>Hanya dua nomor resmi & satu email admin</strong><small>Password tidak ditampilkan dan dapat diganti dari dashboard.</small></span></div><button onClick={() => setIdentifier("riskyfebryanto12@gmail.com")}>Email admin</button><button onClick={() => setIdentifier("082244837977")}>WA 0822…</button><button onClick={() => setIdentifier("085234005206")}>WA 0852…</button></div>}
         {mode === "register" && <p className="signup-copy">Sudah punya akun? <button onClick={() => setMode("client")}>Login Client</button></p>}
         <div className="login-assurance"><span><ShieldCheck /> Data terenkripsi</span><span><CloudOff /> Siap offline</span><span><Headphones /> CS 082244837977 / 085234005206</span></div>
@@ -1148,11 +1186,17 @@ export function CyberDevPos() {
   const [dark, setDark] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
-    fetch("/api/auth/me").then(res=>res.json()).then((data:{user:AppUser|null}) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(()=>controller.abort(),12000);
+    fetch("/api/auth/me",{signal:controller.signal}).then(async response=>{
+      if(!response.ok) throw new Error("Session service unavailable");
+      return response.json() as Promise<{user:AppUser|null}>;
+    }).then((data:{user:AppUser|null}) => {
       setUser(data.user);
       if (data.user?.role === "superadmin") setView("admin");
       if (data.user?.tenantId) flushOfflineTransactions(data.user.tenantId).catch(()=>undefined);
-    }).catch(()=>setUser(null)).finally(()=>setCheckingSession(false));
+    }).catch(()=>setUser(null)).finally(()=>{window.clearTimeout(timer);setCheckingSession(false);});
+    return ()=>{window.clearTimeout(timer);controller.abort();};
   }, []);
   const authenticated = (nextUser: AppUser) => {
     setUser(nextUser);

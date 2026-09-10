@@ -22,6 +22,8 @@ Implementasi menggunakan authorization code, PKCE S256, state sekali pakai yang 
 
 - Di Google Cloud / Google Auth Platform, pilih proyek milik pengelola dan siapkan consent screen.
 - Buat OAuth client bertipe Web application. Authorized redirect URI harus **persis** `https://DOMAIN-ANDA/api/auth/google/callback`.
+- Untuk deployment resmi saat ini, redirect URI adalah `https://cyber-dev-pos.vercel.app/api/auth/google/callback` dan authorized JavaScript origin adalah `https://cyber-dev-pos.vercel.app`.
+- Client Secret berbeda dari Client ID dan tidak boleh ditempel ke source code, commit GitHub, atau percakapan.
 - Masukkan `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` sebagai environment server Vercel. Atur APP_URL ke origin yang sama, kemudian redeploy.
 - Tanpa konfigurasi lengkap, tombol Google nonaktif. Jangan mengklaim koneksi Google selesai sebelum login nyata berhasil.
 - Akun baru Google memperoleh toko demo kosong. Email yang sudah mempunyai akun password harus login dengan password terlebih dahulu, kemudian memilih Tautkan akun Google di Pengaturan. Akun admin hanya dapat ditautkan dari sesi admin yang sah. Tidak ada penggabungan akun otomatis berdasarkan kesamaan email.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { generateKeyPair, SignJWT } from "jose";
 import { NextRequest } from "next/server";
 import { hashPassword, verifyPassword, validatePassword, clearSessionCookie } from "../lib/auth";
-import { verifyGoogleToken } from "../lib/google-auth";
+import { googleConfigured, verifyGoogleToken } from "../lib/google-auth";
 import { buildReceiptHtml } from "../lib/receipt";
 import { postgresQuery } from "../lib/runtime-env";
 import { parseProductNumber } from "../lib/spreadsheet";
@@ -28,6 +28,17 @@ test("Google token validation rejects wrong audience, nonce, issuer, expiry and 
     const token=await new SignJWT({sub:"x",email:"x@example.test",email_verified:true,nonce:"valid-nonce"}).setProtectedHeader({alg:"RS256"}).setIssuer(iss).setAudience(aud).setExpirationTime(exp).sign(privateKey);
     await assert.rejects(verifyGoogleToken(token,"valid-nonce",publicKey));
   }
+});
+test("Google login stays disabled for a copied client id used as the secret",()=>{
+  const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,url:process.env.APP_URL};
+  const id="1013741790568-example.apps.googleusercontent.com";
+  process.env.GOOGLE_CLIENT_ID=id;process.env.GOOGLE_CLIENT_SECRET=id;process.env.APP_URL="https://cyber-dev-pos.vercel.app";
+  assert.equal(googleConfigured(),false);
+  process.env.GOOGLE_CLIENT_SECRET="GOCSPX-valid-shaped-secret";
+  assert.equal(googleConfigured(),true);
+  if(previous.id===undefined)delete process.env.GOOGLE_CLIENT_ID;else process.env.GOOGLE_CLIENT_ID=previous.id;
+  if(previous.secret===undefined)delete process.env.GOOGLE_CLIENT_SECRET;else process.env.GOOGLE_CLIENT_SECRET=previous.secret;
+  if(previous.url===undefined)delete process.env.APP_URL;else process.env.APP_URL=previous.url;
 });
 test("cross-origin, invalid JSON and oversized mutations are rejected",async()=>{
   process.env.APP_URL="http://localhost:3000";

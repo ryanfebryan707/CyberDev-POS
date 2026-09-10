@@ -23,6 +23,7 @@ import * as device from "../app/api/device/authorize/route";
 import * as settings from "../app/api/settings/route";
 import * as notifications from "../app/api/notifications/route";
 import * as imports from "../app/api/products/import/route";
+import { GET as startGoogle } from "../app/api/auth/google/route";
 import { GET as callback } from "../app/api/auth/google/callback/route";
 
 let directory:string,adminCookie:string,ownerCookie:string,otherCookie:string,tenantId:string,otherTenant:string,productId:number;
@@ -127,6 +128,20 @@ test("password changes and logout revoke cookies; brute-force is throttled",asyn
   assert.equal((await login.POST(request("auth/login","POST",{identifier:"missing@example.test",password},"","throttle"))).status,429);
   assert.equal((await logout.POST(request("auth/logout","POST",{},ownerCookie))).status,200);
   assert.equal((await (await me.GET(request("auth/me","GET",undefined,ownerCookie))).json()).user,null);
+});
+test("Google login records the selected admin portal intent",async()=>{
+  const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,url:process.env.APP_URL};
+  process.env.GOOGLE_CLIENT_ID="1013741790568-qa.apps.googleusercontent.com";
+  process.env.GOOGLE_CLIENT_SECRET="GOCSPX-qa-valid-secret";
+  process.env.APP_URL="http://localhost:3000";
+  const response=await startGoogle(new Request("http://localhost:3000/api/auth/google?intent=admin",{headers:{"x-forwarded-for":"oauth-test"}}));
+  assert.equal(response.status,302);
+  assert.match(response.headers.get("location")||"",/^https:\/\/accounts\.google\.com\//);
+  const state=await env.DB.prepare("SELECT intent FROM oauth_states ORDER BY expires_at DESC LIMIT 1").first<{intent:string}>();
+  assert.equal(state?.intent,"admin");
+  if(previous.id===undefined)delete process.env.GOOGLE_CLIENT_ID;else process.env.GOOGLE_CLIENT_ID=previous.id;
+  if(previous.secret===undefined)delete process.env.GOOGLE_CLIENT_SECRET;else process.env.GOOGLE_CLIENT_SECRET=previous.secret;
+  if(previous.url===undefined)delete process.env.APP_URL;else process.env.APP_URL=previous.url;
 });
 test("Google callback fails closed without credentials",async()=>{
   delete process.env.GOOGLE_CLIENT_SECRET;
