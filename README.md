@@ -16,6 +16,14 @@ Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (disarankan mi
 4. Jalankan `npm run verify`. Deploy preview, periksa `/api/health`, login dan alur kasir, kemudian deploy production. Gunakan database preview terpisah untuk pengujian.
 5. Setelah admin pertama berhasil masuk, hapus bootstrap password dari environment dan redeploy.
 
+### Checklist environment production
+
+- Buka **Vercel → cyber-dev-pos → Settings → Environment Variables**. `DATABASE_URL` harus dipasang untuk **Production** (boleh juga Preview/Development), bukan hanya tersimpan pada proyek Neon atau pada project Vercel lain.
+- Nilai `DATABASE_URL` harus berupa connection string PostgreSQL Neon lengkap dan disimpan sebagai secret. Jangan memakai awalan `NEXT_PUBLIC_`.
+- Atur `APP_URL=https://cyber-dev-pos.vercel.app` dan `GOOGLE_CLIENT_ID` ke Client ID dari OAuth client **Web client 1** bertipe **Web application**. Tombol Google utama tidak membutuhkan `GOOGLE_CLIENT_SECRET`.
+- Setiap perubahan environment wajib diikuti deployment baru: buka **Deployments**, pilih deployment terbaru, lalu **Redeploy**. Deployment lama tidak memperoleh environment yang baru ditambahkan.
+- Verifikasi hasil deployment melalui `https://cyber-dev-pos.vercel.app/api/health`. Production siap diuji login hanya bila responsnya HTTP 200 dengan `database: "connected"`.
+
 ## Login Google
 
 Login Client utama memakai tombol resmi Google Identity Services. ID token diverifikasi di server (tanda tangan, issuer, audience, expiry, email terverifikasi, serta nonce sekali pakai yang terikat cookie). Token akses Google tidak diminta atau disimpan. Jalur OAuth authorization-code lama tetap tersedia sebagai kompatibilitas opsional, tetapi tidak dipakai oleh tombol login utama.
