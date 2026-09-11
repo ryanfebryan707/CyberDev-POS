@@ -9,6 +9,7 @@ import { databaseConfigured, postgresQuery } from "../lib/runtime-env";
 import { parseProductNumber } from "../lib/spreadsheet";
 import { proxy } from "../proxy";
 import nextConfig from "../next.config";
+import { createAccessConsent, parseAccessConsent } from "../lib/browser-consent";
 
 test("passwords have independent salts, verify correctly, and reject weak input",async()=>{
   const a=await hashPassword("CorrectLongPassword12"),b=await hashPassword("CorrectLongPassword12");
@@ -18,6 +19,14 @@ test("passwords have independent salts, verify correctly, and reject weak input"
   assert.equal(validatePassword("short1"),false);assert.equal(validatePassword("OnlyLettersLong"),false);
   assert.equal(validateLoginPassword("Legacy800!"),true);assert.equal(validateLoginPassword(""),false);assert.equal(validateLoginPassword("x".repeat(129)),false);
   assert.match(clearSessionCookie(),/HttpOnly.*SameSite=Lax/);
+});
+test("browser consent is versioned and malformed records fail closed",()=>{
+  const consent=createAccessConsent(123456789);
+  assert.deepEqual(parseAccessConsent(JSON.stringify(consent)),consent);
+  assert.equal(parseAccessConsent(null),null);
+  assert.equal(parseAccessConsent("not-json"),null);
+  assert.equal(parseAccessConsent(JSON.stringify({...consent,version:999})),null);
+  assert.equal(parseAccessConsent(JSON.stringify({...consent,permissionsOnDemand:false})),null);
 });
 test("Google token validation rejects wrong audience, nonce, issuer, expiry and unverified email",async()=>{
   process.env.GOOGLE_CLIENT_ID="qa-client";

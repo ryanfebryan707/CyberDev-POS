@@ -66,6 +66,7 @@ type LoginUser = {
   role: string;
   isActive: number;
   passwordChangedAt: number | null;
+  lastLoginAt: number | null;
   createdAt: number;
 };
 
@@ -99,16 +100,16 @@ async function POSTHandler(request: Request) {
     let user: LoginUser | null = null;
     if (isAdminIdentifier) {
       user = await env.DB.prepare(
-        "SELECT id, email, password_hash AS passwordHash, password_salt AS passwordSalt, role, is_active AS isActive, password_changed_at AS passwordChangedAt, created_at AS createdAt FROM users WHERE email = ?"
+        "SELECT id, email, password_hash AS passwordHash, password_salt AS passwordSalt, role, is_active AS isActive, password_changed_at AS passwordChangedAt, last_login_at AS lastLoginAt, created_at AS createdAt FROM users WHERE email = ?"
       ).bind(bootstrap.email).first<LoginUser>();
     } else if (email) {
       user = await env.DB.prepare(
-        "SELECT id, email, password_hash AS passwordHash, password_salt AS passwordSalt, role, is_active AS isActive, password_changed_at AS passwordChangedAt, created_at AS createdAt FROM users WHERE email = ?"
+        "SELECT id, email, password_hash AS passwordHash, password_salt AS passwordSalt, role, is_active AS isActive, password_changed_at AS passwordChangedAt, last_login_at AS lastLoginAt, created_at AS createdAt FROM users WHERE email = ?"
       ).bind(email).first<LoginUser>();
     } else {
       const variants = phoneLoginVariants(phone);
       user = await env.DB.prepare(
-        "SELECT id, email, password_hash AS passwordHash, password_salt AS passwordSalt, role, is_active AS isActive, password_changed_at AS passwordChangedAt, created_at AS createdAt FROM users WHERE phone IN (?, ?, ?) LIMIT 1"
+        "SELECT id, email, password_hash AS passwordHash, password_salt AS passwordSalt, role, is_active AS isActive, password_changed_at AS passwordChangedAt, last_login_at AS lastLoginAt, created_at AS createdAt FROM users WHERE phone IN (?, ?, ?) LIMIT 1"
       ).bind(variants[0] || "", variants[1] || "", variants[2] || "").first<LoginUser>();
     }
 
@@ -128,14 +129,40 @@ async function POSTHandler(request: Request) {
           "INSERT INTO audit_logs (id, tenant_id, user_id, action, details, created_at) VALUES (?, NULL, ?, 'ADMIN_BOOTSTRAPPED', ?, ?)"
         ).bind(crypto.randomUUID(), userId, "Super-admin pertama dibuat secara aman.", bootstrapNow),
       ]);
-      user = { id: userId, email: bootstrap.email, passwordHash: credentials.hash, passwordSalt: credentials.salt, role: "superadmin", isActive: 1, passwordChangedAt: bootstrapNow, createdAt: bootstrapNow };
+      user = { id: userId, email: bootstrap.email, passwordHash: credentials.hash, passwordSalt: credentials.salt, role: "superadmin", isActive: 1, passwordChangedAt: bootstrapNow, lastLoginAt: bootstrapNow, createdAt: bootstrapNow };
     }
 
     if (isAdminIdentifier && user.role !== "superadmin") {
       await recordFailedLogin(throttleKey, now);
       return Response.json({ error: "Identitas admin dikunci dan tidak dapat digunakan sebagai akun client." }, { status: 403 });
     }
-    const passwordMatches = await verifyPassword(password, user.passwordHash, user.passwordSalt);
+    let passwordMatches = await verifyPassword(password, user.passwordHash, user.passwordSalt);
+    // ADMIN_BOOTSTRAP_PASSWORD is also a one-time recovery path for an Admin
+    // record that was provisioned but has never completed its first login.
+    // Once last_login_at is set, this path can no longer replace the password.
+    if (
+      !passwordMatches &&
+      isAdminIdentifier &&
+      user.role === "superadmin" &&
+      user.isActive &&
+      !user.lastLoginAt &&
+      bootstrap.password &&
+      (await sha256(password)) === (await sha256(bootstrap.password))
+    ) {
+      const credentials = await hashPassword(password);
+      const recovered = await env.DB.transaction(async () => {
+        const updated = await env.DB.prepare(
+          "UPDATE users SET password_hash = ?, password_salt = ?, password_changed_at = ?, last_login_at = ? WHERE id = ? AND role = 'superadmin' AND is_active = 1 AND last_login_at IS NULL RETURNING id"
+        ).bind(credentials.hash, credentials.salt, now, now, user!.id).first<{ id: string }>();
+        if (!updated) return false;
+        await env.DB.prepare("DELETE FROM auth_sessions WHERE user_id = ?").bind(user!.id).run();
+        await env.DB.prepare(
+          "INSERT INTO audit_logs (id, tenant_id, user_id, action, details, created_at) VALUES (?, NULL, ?, 'ADMIN_FIRST_LOGIN_RECOVERED', ?, ?)"
+        ).bind(crypto.randomUUID(), user!.id, "Password bootstrap dipakai satu kali untuk memulihkan login pertama Super-Admin.", now).run();
+        return true;
+      });
+      passwordMatches = recovered;
+    }
     if (!user.isActive || !passwordMatches) {
       await recordFailedLogin(throttleKey, now);
       return invalidCredentials();

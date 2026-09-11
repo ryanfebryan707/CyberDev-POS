@@ -265,6 +265,10 @@ async function PATCHHandler(request: Request) {
         "SELECT id FROM users WHERE tenant_id != ? AND (email = ? OR phone IN (?, ?, ?)) LIMIT 1"
       ).bind(tenantId, email, variants[0] || "", variants[1] || "", variants[2] || "").first();
       if (duplicate) return Response.json({ error: "Email atau nomor WhatsApp digunakan client lain." }, { status: 409 });
+      const owner = await env.DB.prepare("SELECT id, email FROM users WHERE tenant_id = ? AND role = 'owner' LIMIT 1")
+        .bind(tenantId).first<{ id: string; email: string }>();
+      if (!owner) return Response.json({ error: "Akun pemilik Client tidak ditemukan." }, { status: 404 });
+      const emailChanged = owner.email !== email;
       const writes: PreparedStatement[] = [
         env.DB.prepare(
           "UPDATE tenants SET name = ?, business_type = ?, owner_email = ?, phone = ?, address = ?, city = ?, latitude = ?, longitude = ?, last_location_at = ?, updated_at = ? WHERE id = ?"
@@ -278,15 +282,21 @@ async function PATCHHandler(request: Request) {
       if (body.password) {
         if (!validatePassword(body.password)) return Response.json({ error: "Password baru minimal 12 karakter, berisi huruf dan angka." }, { status: 400 });
         const credentials = await hashPassword(body.password);
-        const owner = await env.DB.prepare("SELECT id FROM users WHERE tenant_id = ? AND role = 'owner' LIMIT 1")
-          .bind(tenantId).first<{ id: string }>();
-        if (owner) {
-          writes.push(
-            env.DB.prepare("UPDATE users SET password_hash = ?, password_salt = ?, password_changed_at = ? WHERE id = ?")
-              .bind(credentials.hash, credentials.salt, now, owner.id),
-            env.DB.prepare("DELETE FROM auth_sessions WHERE user_id = ?").bind(owner.id)
-          );
-        }
+        writes.push(
+          env.DB.prepare("UPDATE users SET password_hash = ?, password_salt = ?, password_changed_at = ? WHERE id = ?")
+            .bind(credentials.hash, credentials.salt, now, owner.id)
+        );
+      }
+      if (emailChanged) {
+        writes.push(
+          env.DB.prepare("DELETE FROM oauth_accounts WHERE provider = 'google' AND user_id = ?").bind(owner.id),
+          env.DB.prepare(
+            "INSERT INTO audit_logs (id, tenant_id, user_id, action, details, created_at) VALUES (?, ?, ?, 'CLIENT_GOOGLE_LINK_REVOKED', ?, ?)"
+          ).bind(crypto.randomUUID(), tenantId, auth.user.id, "Tautan Google lama dilepas karena email pemilik diubah oleh Super-Admin.", now)
+        );
+      }
+      if (emailChanged || body.password) {
+        writes.push(env.DB.prepare("DELETE FROM auth_sessions WHERE user_id = ?").bind(owner.id));
       }
       await env.DB.batch(writes);
       return Response.json({ ok: true });

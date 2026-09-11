@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { randomBytes } from "node:crypto";
 import { env } from "@/lib/runtime-env";
-import { createSession, getBootstrapAdmin, hashPassword, normalizeEmail, readCookie, sha256 } from "@/lib/auth";
+import { createSession, getBootstrapAdmin, normalizeEmail, readCookie, sha256 } from "@/lib/auth";
 import { HttpError } from "@/lib/http";
 
 const googleKeys = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
@@ -74,20 +74,37 @@ async function createGoogleSession(request: Request, identity: GoogleIdentity, s
       const current = await getCurrentUser(request);
       if (!current || current.id !== saved.userId || current.email !== identity.email) throw new HttpError(403,"Masuk kembali dan gunakan email Google yang sama.");
       if (current.role === "superadmin") throw new HttpError(403,"Google hanya dapat ditautkan ke akun Client.");
+      const otherGoogle = await env.DB.prepare("SELECT subject FROM oauth_accounts WHERE provider='google' AND user_id=?")
+        .bind(current.id).first<{subject:string}>();
+      if (otherGoogle && otherGoogle.subject !== identity.subject) throw new HttpError(409,"Akun Client ini sudah ditautkan ke identitas Google lain.");
+      if (otherGoogle) return current.id;
       await env.DB.prepare("INSERT INTO oauth_accounts(provider,subject,user_id,created_at) VALUES ('google',?,?,?)").bind(identity.subject,current.id,Date.now()).run();
       return current.id;
     }
-    const existing = await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(identity.email).first();
-    if (existing || identity.email === getBootstrapAdmin().email) throw new HttpError(409,"Masuk menggunakan password terlebih dahulu, lalu tautkan Google di Pengaturan.");
-    const now = Date.now(), tenantId = crypto.randomUUID(), id = crypto.randomUUID();
-    const credentials = await hashPassword(randomToken());
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO tenants(id,name,owner_email,business_type,status,plan_code,demo_expires_at,created_at,updated_at) VALUES (?,?,?,'general','demo','demo',?,?,?)").bind(tenantId,`Toko ${identity.name}`,identity.email,now+14*86400000,now,now),
-      env.DB.prepare("INSERT INTO users(id,tenant_id,name,email,password_hash,password_salt,role,is_active,created_at) VALUES (?,?,?,?,?,?,'owner',1,?)").bind(id,tenantId,identity.name,identity.email,credentials.hash,credentials.salt,now),
-      env.DB.prepare("INSERT INTO oauth_accounts(provider,subject,user_id,created_at) VALUES ('google',?,?,?)").bind(identity.subject,id,now),
-      env.DB.prepare("INSERT INTO audit_logs(id,tenant_id,user_id,action,created_at) VALUES (?,?,?,'GOOGLE_ACCOUNT_CREATED',?)").bind(crypto.randomUUID(),tenantId,id,now),
-    ]);
-    return id;
+    if (identity.email === getBootstrapAdmin().email) throw new HttpError(403,"Super-Admin harus masuk menggunakan email/nomor dan password.");
+    const existing = await env.DB.prepare(
+      `SELECT u.id, u.tenant_id AS tenantId, u.role, u.is_active AS isActive, a.subject AS googleSubject
+       FROM users u LEFT JOIN oauth_accounts a ON a.user_id=u.id AND a.provider='google'
+       WHERE u.email=? LIMIT 1`
+    ).bind(identity.email).first<{id:string;tenantId:string|null;role:string;isActive:number;googleSubject:string|null}>();
+    if (!existing) {
+      throw new HttpError(403,"Email Google belum terdaftar. Daftar Demo secara manual atau minta Admin menambahkan Client terlebih dahulu.");
+    }
+    if (!existing.isActive) throw new HttpError(403,"Akun Client tidak aktif. Hubungi Admin CyberDev POS.");
+    if (existing.role === "superadmin") throw new HttpError(403,"Super-Admin harus masuk menggunakan email/nomor dan password.");
+    if (existing.googleSubject && existing.googleSubject !== identity.subject) {
+      throw new HttpError(403,"Akun Client ini sudah ditautkan ke identitas Google lain.");
+    }
+    if (!existing.googleSubject) {
+      const now = Date.now();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO oauth_accounts(provider,subject,user_id,created_at) VALUES ('google',?,?,?)")
+          .bind(identity.subject,existing.id,now),
+        env.DB.prepare("INSERT INTO audit_logs(id,tenant_id,user_id,action,details,created_at) VALUES (?,?,?,'GOOGLE_ACCOUNT_LINKED',?,?)")
+          .bind(crypto.randomUUID(),existing.tenantId,existing.id,"Email Google terverifikasi dan cocok dengan akun Client yang telah terdaftar.",now),
+      ]);
+    }
+    return existing.id;
   });
   await env.DB.prepare("UPDATE users SET last_login_at=? WHERE id=?").bind(Date.now(),userId).run();
   return createSession(userId);

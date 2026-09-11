@@ -28,6 +28,7 @@ import { GET as startGoogle } from "../app/api/auth/google/route";
 import { GET as callback } from "../app/api/auth/google/callback/route";
 import * as googleIdentity from "../app/api/auth/google/identity/route";
 import { completeGoogleIdentityLogin } from "../lib/google-auth";
+import { hashPassword } from "../lib/auth";
 
 let directory:string,adminCookie:string,ownerCookie:string,otherCookie:string,tenantId:string,otherTenant:string,productId:number;
 const password=randomBytes(24).toString("base64url")+"A1";
@@ -162,23 +163,68 @@ test("an existing legacy-length password can authenticate and then be upgraded",
   if(previous.password===undefined)delete process.env.ADMIN_BOOTSTRAP_PASSWORD;else process.env.ADMIN_BOOTSTRAP_PASSWORD=previous.password;
   if(previous.phones===undefined)delete process.env.ADMIN_PHONE_ALIASES;else process.env.ADMIN_PHONE_ALIASES=previous.phones;
 });
+test("bootstrap secret can recover only an Admin that never completed first login",async()=>{
+  const previous={email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_BOOTSTRAP_PASSWORD,phones:process.env.ADMIN_PHONE_ALIASES};
+  const recoveryPassword=randomBytes(18).toString("base64url")+"A1";
+  const stalePassword=randomBytes(18).toString("base64url")+"B2";
+  process.env.ADMIN_EMAIL="recovery-admin@example.test";
+  process.env.ADMIN_BOOTSTRAP_PASSWORD=recoveryPassword;
+  process.env.ADMIN_PHONE_ALIASES="083333333334,6283333333334";
+  try {
+    const stale=await hashPassword(stalePassword),id=crypto.randomUUID(),now=Date.now();
+    await env.DB.prepare("INSERT INTO users(id,tenant_id,name,email,phone,password_hash,password_salt,role,is_active,password_changed_at,last_login_at,created_at) VALUES (?,NULL,'Recovery Admin',?,?,?,?,'superadmin',1,?,NULL,?)")
+      .bind(id,process.env.ADMIN_EMAIL,"083333333334",stale.hash,stale.salt,now,now).run();
+    const recovered=await login.POST(request("auth/login","POST",{identifier:"6283333333334",password:recoveryPassword},"","admin-recovery"));
+    assert.equal(recovered.status,200,JSON.stringify(await recovered.clone().json()));
+    const row=await env.DB.prepare("SELECT last_login_at AS lastLoginAt FROM users WHERE id=?").bind(id).first<{lastLoginAt:number|null}>();
+    assert.ok(Number(row?.lastLoginAt)>0);
+    process.env.ADMIN_BOOTSTRAP_PASSWORD=stalePassword;
+    const cannotReuse=await login.POST(request("auth/login","POST",{identifier:process.env.ADMIN_EMAIL,password:stalePassword},"","admin-recovery-used"));
+    assert.equal(cannotReuse.status,401);
+  } finally {
+    if(previous.email===undefined)delete process.env.ADMIN_EMAIL;else process.env.ADMIN_EMAIL=previous.email;
+    if(previous.password===undefined)delete process.env.ADMIN_BOOTSTRAP_PASSWORD;else process.env.ADMIN_BOOTSTRAP_PASSWORD=previous.password;
+    if(previous.phones===undefined)delete process.env.ADMIN_PHONE_ALIASES;else process.env.ADMIN_PHONE_ALIASES=previous.phones;
+  }
+});
 test("Google Identity config works without a client secret and is protected by nonce and role",async()=>{
   const previous={id:process.env.GOOGLE_CLIENT_ID,secret:process.env.GOOGLE_CLIENT_SECRET,alias:process.env.AUTH_GOOGLE_SECRET,url:process.env.APP_URL};
   process.env.GOOGLE_CLIENT_ID="1013741790568-qa.apps.googleusercontent.com";
   delete process.env.GOOGLE_CLIENT_SECRET;delete process.env.AUTH_GOOGLE_SECRET;
   process.env.APP_URL="http://localhost:3000";
-  const config=await googleIdentity.GET(request("auth/google/identity","GET",undefined,"","google-identity-config"));
-  assert.equal(config.status,200,JSON.stringify(await config.clone().json()));
-  const data=await config.json() as {clientId:string;nonce:string};
-  assert.equal(data.clientId,process.env.GOOGLE_CLIENT_ID);assert.ok(data.nonce.length>=40);
-  const googleCookie=session(config);
+  const manual=await createOwner("google-manual@example.test","084444444441","google-manual-register");
+  const adminCreated=await admin.POST(request("admin/clients","POST",{
+    ownerName:"Google Admin Client",storeName:"Google Admin Store",email:"google-admin@example.test",phone:"084444444442",password,
+    planCode:"demo",businessType:"general",address:"QA",city:"QA",
+  },adminCookie,"google-admin-create"));
+  assert.equal(adminCreated.status,201,JSON.stringify(await adminCreated.clone().json()));
+  const adminCreatedTenant=(await adminCreated.json() as {tenantId:string}).tenantId;
   const {privateKey,publicKey}=await generateKeyPair("RS256");
-  const token=await new SignJWT({sub:"google-owner-subject",email:"google-owner@example.test",email_verified:true,nonce:data.nonce,name:"Google QA Owner"})
-    .setProtectedHeader({alg:"RS256"}).setIssuer("https://accounts.google.com").setAudience(data.clientId).setExpirationTime("2m").sign(privateKey);
-  const createdSession=await completeGoogleIdentityLogin(request("auth/google/identity","POST",undefined,googleCookie,"google-identity-valid"),token,publicKey);
-  const googleOwner=await (await me.GET(request("auth/me","GET",undefined,createdSession.cookie.split(";")[0]))).json();
-  assert.equal(googleOwner.user.role,"owner");assert.equal(googleOwner.user.tenantStatus,"demo");
-  await assert.rejects(completeGoogleIdentityLogin(request("auth/google/identity","POST",undefined,googleCookie,"google-identity-valid-replay"),token,publicKey));
+  const googleLogin=async(email:string,subject:string,expectedTenant:string,ip:string)=>{
+    const config=await googleIdentity.GET(request("auth/google/identity","GET",undefined,"",`${ip}-config`));
+    assert.equal(config.status,200,JSON.stringify(await config.clone().json()));
+    const data=await config.json() as {clientId:string;nonce:string};
+    assert.equal(data.clientId,process.env.GOOGLE_CLIENT_ID);assert.ok(data.nonce.length>=40);
+    const token=await new SignJWT({sub:subject,email,email_verified:true,nonce:data.nonce,name:"Google QA Owner"})
+      .setProtectedHeader({alg:"RS256"}).setIssuer("https://accounts.google.com").setAudience(data.clientId).setExpirationTime("2m").sign(privateKey);
+    const createdSession=await completeGoogleIdentityLogin(request("auth/google/identity","POST",undefined,session(config),`${ip}-post`),token,publicKey);
+    const googleOwner=await (await me.GET(request("auth/me","GET",undefined,createdSession.cookie.split(";")[0]))).json();
+    assert.equal(googleOwner.user.role,"owner");assert.equal(googleOwner.user.tenantId,expectedTenant);
+    return {config,token};
+  };
+  const linkedManual=await googleLogin("google-manual@example.test","google-manual-subject",manual.tenantId,"google-manual");
+  await assert.rejects(completeGoogleIdentityLogin(request("auth/google/identity","POST",undefined,session(linkedManual.config),"google-manual-replay"),linkedManual.token,publicKey));
+  await googleLogin("google-admin@example.test","google-admin-subject",adminCreatedTenant,"google-admin");
+  const tenantsBefore=Number((await env.DB.prepare("SELECT COUNT(*) AS total FROM tenants").first<{total:number}>())?.total||0);
+  const unknownConfig=await googleIdentity.GET(request("auth/google/identity","GET",undefined,"","google-unknown-config"));
+  const unknownData=await unknownConfig.json() as {clientId:string;nonce:string};
+  const unknownToken=await new SignJWT({sub:"google-unknown-subject",email:"unknown-google@example.test",email_verified:true,nonce:unknownData.nonce,name:"Unknown"})
+    .setProtectedHeader({alg:"RS256"}).setIssuer("https://accounts.google.com").setAudience(unknownData.clientId).setExpirationTime("2m").sign(privateKey);
+  await assert.rejects(
+    completeGoogleIdentityLogin(request("auth/google/identity","POST",undefined,session(unknownConfig),"google-unknown-post"),unknownToken,publicKey),
+    /Email Google belum terdaftar/
+  );
+  assert.equal(Number((await env.DB.prepare("SELECT COUNT(*) AS total FROM tenants").first<{total:number}>())?.total||0),tenantsBefore);
   const invalidConfig=await googleIdentity.GET(request("auth/google/identity","GET",undefined,"","google-identity-invalid-config"));
   const invalidCookie=session(invalidConfig);
   const invalid=await googleIdentity.POST(request("auth/google/identity","POST",{credential:"x".repeat(100)},invalidCookie,"google-identity-post"));

@@ -1,4 +1,4 @@
-const CACHE = "cyberdev-pos-v4";
+const CACHE = "cyberdev-pos-v5";
 const CORE = ["/", "/manifest.webmanifest", "/favicon.svg", "/cyberdev-logo.png", "/cyberdev-brand.jpg"];
 
 self.addEventListener("install", (event) => event.waitUntil(Promise.all([caches.open(CACHE).then((cache) => cache.addAll(CORE)),self.skipWaiting()])));
