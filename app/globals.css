@@ -695,7 +695,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .login-brand { display: flex; align-items: center; justify-content: space-between; }
 .login-brand .brand-lockup strong { color: #17182a; }
 .login-brand > span { color: #8b90a2; font-size: 9px; }
-.login-logo-image { width: clamp(76px, 7vw, 92px); height: clamp(76px, 7vw, 92px); object-fit: cover; border-radius: 16px; box-shadow: 0 12px 28px rgba(0,106,255,.16); }
+.login-logo-image { width: clamp(64px, 5.8vw, 78px); height: clamp(64px, 5.8vw, 78px); object-fit: cover; border-radius: 14px; box-shadow: 0 12px 28px rgba(0,106,255,.16); }
 .login-form-wrap { width: 100%; max-width: 455px; margin: auto; padding: 34px 0 25px; }
 .login-eyebrow { display: flex; align-items: center; gap: 5px; color: var(--brand); font-size: 8px; font-weight: 900; letter-spacing: 1px; }
 .login-eyebrow svg { width: 13px; }
@@ -943,6 +943,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .mobile-nav { display: none; }
 .sidebar-backdrop { display: none; }
 
+.pwa-install { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: grid; justify-items: end; gap: 8px; }
+.pwa-install > button { min-height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 15px; border: 1px solid rgba(255,255,255,.25); border-radius: 12px; color: white; background: linear-gradient(135deg,#7868fb,#5d4ae9); box-shadow: 0 12px 30px rgba(70,54,190,.28); font-size: 10px; font-weight: 850; }
+.pwa-install > button svg { width: 15px; }
+.pwa-install > div { width: min(310px,calc(100vw - 24px)); box-sizing: border-box; display: grid; grid-template-columns: 1fr 26px; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: var(--panel); box-shadow: 0 12px 35px rgba(20,21,40,.16); font-size: 9px; line-height: 1.45; }
+.pwa-install > div button { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; color: var(--muted-ink); background: var(--canvas); }
+.pwa-install > div svg { width: 13px; }
+@media (display-mode: standalone) { .pwa-install { display: none; } }
+
 @media (max-width: 1220px) {
   .stats-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .product-grid { grid-template-columns: repeat(3,minmax(135px,1fr)); }
@@ -953,6 +961,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 @media (max-width: 980px) {
+  .pwa-install { bottom: 76px; right: 12px; }
   .admin-client-toolbar { grid-template-columns: 1fr 1fr; }
   .admin-client-toolbar .filter-pills { grid-column: 1/-1; }
   .client-card { grid-template-columns: 38px 1fr 150px; }
@@ -1000,7 +1009,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .login-shell { display: block; background: white; }
   .login-panel { min-height: 100vh; padding: 22px 22px 18px; }
   .login-brand > span { display: none; }
-  .login-logo-image { width: 76px; height: 76px; border-radius: 14px; }
+  .login-logo-image { width: 66px; height: 66px; border-radius: 12px; }
   .login-form-wrap { max-width: 430px; padding: 40px 0 24px; }
   .login-form-wrap h1 { font-size: 35px; }
   .login-showcase { display: none; }

@@ -10,6 +10,10 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#f6f7fb",
     theme_color: "#6957f5",
     orientation: "any",
-    icons: [{ src: "/favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
+    icons: [
+      { src: "/cyberdev-logo.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/cyberdev-brand.jpg", sizes: "1254x1254", type: "image/jpeg", purpose: "any" },
+      { src: "/favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+    ],
   };
 }

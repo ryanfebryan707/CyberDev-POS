@@ -52,6 +52,7 @@ Login Client utama memakai tombol resmi Google Identity Services. ID token diver
 - QRIS, transfer, dan metode lain di kasir adalah **pencatatan pembayaran manual**. Belum ada konfirmasi otomatis dari payment gateway. Tidak ada integrasi WhatsApp Business API, marketplace, biometrik, loyalitas/poin, ataupun absensi yang sudah aktif.
 - Lokasi dan IP mencatat persetujuan perangkat toko. Lokasi browser tidak membuktikan identitas perangkat dan tidak menjamin pencegahan GPS palsu.
 - Antrean offline dipisahkan menurut tenant. Transaksi yang ditolak server tetap tersimpan untuk rekonsiliasi, tidak dihitung sebagai berhasil tersinkron. Login pertama memerlukan internet. Stok serentak antarperangkat offline memerlukan rekonsiliasi ketika online.
+- Setelah login online dan katalog berhasil tersinkron, Client dapat membuka kembali PWA saat offline selama snapshot sesi perangkat masih valid (maksimal 7 hari dan tidak melewati masa Demo/langganan). Super-Admin tidak disimpan untuk akses offline; koordinat, IP, token sesi, dan password juga tidak pernah dimasukkan ke cache offline.
 - Printer USB, laci kasir, scanner, kamera, dan GPS memerlukan uji pada perangkat fisik yang dipakai. Dukungan tergantung browser/perangkat.
 - Zona waktu laporan WITA. Laporan adalah laba kotor berdasarkan HPP, bukan laporan akuntansi lengkap.
 - Perlu uji beban sesuai penggunaan nyata, backup/restore terjadwal, pemantauan, kebijakan retensi, dan pembaruan dependensi. Tidak ada jaminan bebas bug atau layanan berjalan selamanya.

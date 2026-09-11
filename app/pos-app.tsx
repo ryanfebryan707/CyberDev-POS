@@ -88,7 +88,7 @@ import {
 import { CustomersView, StaffView, SettingsView } from "./management";
 import { exportRows, readRows, parseProductNumber } from "@/lib/spreadsheet";
 import { Progress } from "@/components/ui/progress";
-import { cacheProductsOffline, flushOfflineTransactions, loadProductsOffline, saveTransactionOnlineFirst } from "@/lib/offline-pos";
+import { cacheOfflineUser, cacheProductsOffline, clearOfflineUser, flushOfflineTransactions, loadOfflineUser, loadProductsOffline, saveTransactionOnlineFirst, type OfflineUserSnapshot } from "@/lib/offline-pos";
 import { connectEscPosPrinter, getAuthorizedPrinterName, openEscPosCashDrawer, printEscPosReceipt } from "@/lib/cash-drawer";
 import { businessTypeLabel, businessTypes } from "@/lib/business-types";
 import { buildReceiptHtml, buildReceiptText, type ReceiptData } from "@/lib/receipt";
@@ -131,6 +131,29 @@ type AppUser = {
   deviceAuthorizedAt: number | null;
   lastIp: string | null;
 };
+
+function offlineSnapshot(user:AppUser):OfflineUserSnapshot|null {
+  if(user.role==="superadmin" || !user.tenantId || !user.tenantStatus)return null;
+  return {
+    id:user.id,tenantId:user.tenantId,name:user.name,role:user.role,storeName:user.storeName,
+    phone:user.phone,address:user.address,city:user.city,businessType:user.businessType,
+    dataRevision:user.dataRevision,tenantStatus:user.tenantStatus,planCode:user.planCode,
+    demoExpiresAt:user.demoExpiresAt,activeUntil:user.activeUntil,deviceAuthorizedAt:user.deviceAuthorizedAt,
+  };
+}
+
+function restoreOfflineUser(user:OfflineUserSnapshot):AppUser|null {
+  const now=Date.now();
+  const accessValid=user.tenantStatus==="demo"
+    ? Boolean(user.demoExpiresAt && user.demoExpiresAt>now)
+    : user.tenantStatus==="active"
+      ? Boolean(user.activeUntil && user.activeUntil>now && user.deviceAuthorizedAt)
+      : false;
+  if(!accessValid)return null;
+  return {
+    ...user,email:"",latitude:null,longitude:null,locationAccuracy:null,locationConsentAt:null,lastIp:null,
+  };
+}
 
 type PlanOption = { code: string; name: string; period: string; price: number; popular?: boolean; best?: boolean };
 type PaymentMethod = { id: string; channel: string; name: string; account: string; holder: string };
@@ -400,6 +423,9 @@ function PosView({ user }: { user: AppUser }) {
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [tenantId]);
+  useEffect(()=>{
+    if(tenantId && catalogProducts.length)cacheProductsOffline(tenantId,catalogProducts).catch(()=>undefined);
+  },[tenantId,catalogProducts]);
   const categories = ["Semua", ...Array.from(new Set(catalogProducts.map(p => p.category)))];
   const shown = catalogProducts.filter((p) => (category === "Semua" || p.category === category) && (p.name.toLowerCase().includes(query.toLowerCase()) || (p.barcode || "").includes(query)));
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -1187,25 +1213,47 @@ export function CyberDevPos() {
   const [dark, setDark] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
+    let mounted=true;
     const controller = new AbortController();
     const timer = window.setTimeout(()=>controller.abort(),12000);
-    fetch("/api/auth/me",{signal:controller.signal}).then(async response=>{
-      if(!response.ok) throw new Error("Session service unavailable");
-      return response.json() as Promise<{user:AppUser|null}>;
-    }).then((data:{user:AppUser|null}) => {
-      setUser(data.user);
-      if (data.user?.role === "superadmin") setView("admin");
-      if (data.user?.tenantId) flushOfflineTransactions(data.user.tenantId).catch(()=>undefined);
-    }).catch(()=>setUser(null)).finally(()=>{window.clearTimeout(timer);setCheckingSession(false);});
-    return ()=>{window.clearTimeout(timer);controller.abort();};
+    const checkSession=async()=>{
+      try{
+        const response=await fetch("/api/auth/me",{signal:controller.signal});
+        if(!response.ok)throw new Error("Session service unavailable");
+        const data=await response.json() as {user:AppUser|null};
+        if(!mounted)return;
+        setUser(data.user);
+        if(data.user?.role==="superadmin")setView("admin");
+        const snapshot=data.user?offlineSnapshot(data.user):null;
+        if(snapshot)cacheOfflineUser(snapshot).catch(()=>undefined);
+        else clearOfflineUser().catch(()=>undefined);
+        if(data.user?.tenantId)flushOfflineTransactions(data.user.tenantId).catch(()=>undefined);
+      }catch{
+        if(!mounted)return;
+        const cached=!navigator.onLine?await loadOfflineUser().catch(()=>null):null;
+        if(!mounted)return;
+        setUser(cached?restoreOfflineUser(cached):null);
+      }finally{
+        window.clearTimeout(timer);
+        if(mounted)setCheckingSession(false);
+      }
+    };
+    checkSession().catch(()=>{if(mounted){setUser(null);setCheckingSession(false);}});
+    return ()=>{mounted=false;window.clearTimeout(timer);controller.abort();};
   }, []);
   const authenticated = (nextUser: AppUser) => {
     setUser(nextUser);
     setView(nextUser.role === "superadmin" ? "admin" : "overview");
+    const snapshot=offlineSnapshot(nextUser);
+    if(snapshot)cacheOfflineUser(snapshot).catch(()=>undefined);
+    else clearOfflineUser().catch(()=>undefined);
     if (nextUser.tenantId) flushOfflineTransactions(nextUser.tenantId).catch(()=>undefined);
   };
   const logout = async () => {
-    await fetch("/api/auth/logout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"}).catch(()=>undefined);
+    await Promise.all([
+      fetch("/api/auth/logout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"}).catch(()=>undefined),
+      clearOfflineUser().catch(()=>undefined),
+    ]);
     setUser(null);
     setView("overview");
   };
