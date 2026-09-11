@@ -1,8 +1,25 @@
 import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
 
-if (!process.env.DATABASE_URL) throw new Error("Set DATABASE_URL in the server environment before migration.");
-const pool = new Pool({connectionString: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL, max: 1});
+function connectionStringFromParts() {
+  const host=process.env.PGHOST || process.env.POSTGRES_HOST;
+  const user=process.env.PGUSER || process.env.POSTGRES_USER;
+  const password=process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD;
+  const database=process.env.PGDATABASE || process.env.POSTGRES_DATABASE;
+  const port=process.env.PGPORT || "5432";
+  if (!host || !user || !password || !database) return "";
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}?sslmode=${encodeURIComponent(process.env.PGSSLMODE || "require")}`;
+}
+
+const connectionString=process.env.DATABASE_URL_UNPOOLED
+  || process.env.POSTGRES_URL_NON_POOLING
+  || process.env.DATABASE_URL
+  || process.env.POSTGRES_URL
+  || process.env.POSTGRES_PRISMA_URL
+  || process.env.NEON_DATABASE_URL
+  || connectionStringFromParts();
+if (!connectionString) throw new Error("Set a supported PostgreSQL connection variable before migration.");
+const pool = new Pool({connectionString, max: 1, connectionTimeoutMillis: 15000});
 const client = await pool.connect();
 try {
   await client.query("BEGIN");
