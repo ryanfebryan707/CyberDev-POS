@@ -203,15 +203,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .bars > div span { position: absolute; top: -31px; left: 50%; transform: translateX(-50%); padding: 5px 7px; border-radius: 5px; color: white; background: #25263a; font-size: 8px; white-space: nowrap; }
 .chart-labels { position: absolute; left: 0; right: 0; bottom: -20px; display: flex; justify-content: space-between; color: #9a9eb0; font-size: 8px; }
 .activity-list { border-top: 1px solid var(--line); }
-.activity-list > div { min-height: 58px; display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 10px; padding: 8px 18px; border-bottom: 1px solid var(--line); }
+.activity-list > div { min-height: 58px; display: grid; grid-template-columns: 32px minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 8px 18px; border-bottom: 1px solid var(--line); }
 .activity-list > div:last-child { border-bottom: 0; }
+.activity-list > div > span { min-width: 0; }
 .activity-icon { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; }
 .activity-icon svg { width: 14px; }
 .activity-icon.sale { color: #18a875; background: #e9f9f3; }
 .activity-icon.stock { color: #2e8bd0; background: #eaf5ff; }
 .activity-icon.refund { color: #e95667; background: #ffedef; }
 .activity-list strong,.activity-list small { display: block; }
-.activity-list strong { font-size: 10px; }
+.activity-list strong { max-width: 100%; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .activity-list small { margin-top: 3px; color: var(--muted-ink); font-size: 8px; }
 .activity-list em { text-align: right; font-style: normal; }
 .activity-list em b { display: block; color: var(--success); font-size: 9px; }
@@ -370,7 +371,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .payment-success > div:first-child { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; color: white; background: var(--success); box-shadow: 0 10px 30px rgba(24,168,117,.25); }
 .payment-success > div:first-child svg { width: 27px; }
 .payment-success h3 { margin: 18px 0 6px; font-size: 20px; }
-.payment-success p { max-width: 350px; margin: 0; color: var(--muted-ink); font-size: 11px; line-height: 1.6; }
+.payment-success p { max-width: 350px; margin: 0; overflow-wrap: anywhere; color: var(--muted-ink); font-size: 11px; line-height: 1.6; }
 .payment-success > strong { margin: 15px 0 20px; color: var(--brand); font-size: 28px; }
 .payment-success > div:last-child { display: flex; gap: 8px; }
 
