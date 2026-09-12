@@ -14,6 +14,7 @@
     "test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:api": "node --import tsx --test --test-concurrency=1 tests/api.integration.ts",
     "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/migrate.ts",
+    "test:live": "node scripts/live-smoke.mjs",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:api && npm run build",
     "dev:vinext": "vinext dev --port 3001",
     "build:vinext": "vinext build",

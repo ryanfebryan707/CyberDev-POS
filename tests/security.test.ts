@@ -71,6 +71,21 @@ test("cross-origin, invalid JSON and oversized mutations are rejected",async()=>
   assert.equal((await proxy(request({origin:"http://localhost:3000","content-type":"application/json"},'{"password":1234}'))).status,400);
   process.env.APP_URL="https://stale-preview.example.test";
   assert.equal((await proxy(request({origin:"http://localhost:3000","content-type":"application/json"},"{}"))).status,200);
+  const proxied = (origin: string, extra: Record<string,string> = {}) => new NextRequest("http://internal:8080/api/products", {
+    method:"POST",
+    headers:{
+      origin,
+      host:"internal:8080",
+      "x-forwarded-host":"cyberdev-pos-web-production.up.railway.app",
+      "x-forwarded-proto":"https",
+      "content-type":"application/json",
+      ...extra,
+    },
+    body:"{}",
+  });
+  assert.equal((await proxy(proxied("https://cyberdev-pos-web-production.up.railway.app"))).status,200);
+  assert.equal((await proxy(proxied("https://evil.test"))).status,403);
+  assert.equal((await proxy(proxied("https://cyberdev-pos-web-production.up.railway.app",{"sec-fetch-site":"cross-site"}))).status,403);
 });
 test("receipt escapes user HTML and spreadsheet quantities preserve decimals",()=>{
   const html=buildReceiptHtml({transactionId:"T1",storeName:"<img src=x onerror=alert(1)>",cashierName:"Kasir",customerName:"<script>alert(1)</script>",createdAt:Date.now(),items:[],subtotal:100,tax:0,discount:0,total:100,paymentMethod:"Tunai",amountReceived:100,changeAmount:0});

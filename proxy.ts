@@ -1,11 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 
+function requestHosts(request: NextRequest) {
+  const hosts = new Set<string>();
+  const add = (value: string | null) => {
+    for (const candidate of (value || "").split(",")) {
+      const normalized = candidate.trim().toLowerCase();
+      if (normalized) hosts.add(normalized);
+    }
+  };
+  add(request.nextUrl.host);
+  add(request.headers.get("host"));
+  add(request.headers.get("x-forwarded-host"));
+  return hosts;
+}
+
+function isSamePublicOrigin(request: NextRequest, origin: string | null) {
+  if (!origin) return false;
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    return requestHosts(request).has(parsed.host.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export async function proxy(request: NextRequest) {
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
     const origin = request.headers.get("origin");
     // The browser's current deployment origin is the CSRF boundary. A stale or
-    // malformed APP_URL must never break every production POST request.
-    if (!origin || origin !== request.nextUrl.origin || request.headers.get("sec-fetch-site") === "cross-site") {
+    // malformed APP_URL must never break every production POST request. Match
+    // the public Host as well as x-forwarded-host because managed platforms
+    // terminate HTTPS before forwarding the request to the Node container.
+    if (!isSamePublicOrigin(request, origin) || request.headers.get("sec-fetch-site") === "cross-site") {
       return NextResponse.json({error: "Asal permintaan tidak diizinkan."}, {status: 403});
     }
     if (!request.headers.get("content-type")?.startsWith("application/json")) {
