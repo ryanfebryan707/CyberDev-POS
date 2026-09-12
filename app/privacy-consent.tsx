@@ -63,3 +63,4 @@ export function PrivacyConsent({ children }: { children: ReactNode }) {
     </section>
   </main>;
 }
+

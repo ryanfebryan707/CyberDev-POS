@@ -11,7 +11,9 @@ function connectionStringFromParts() {
   return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}?sslmode=${encodeURIComponent(process.env.PGSSLMODE || "require")}`;
 }
 
-const connectionString=process.env.DATABASE_URL_UNPOOLED
+const connectionString=process.env.CYBERDEV_DATABASE_URL_UNPOOLED
+  || process.env.DATABASE_URL_UNPOOLED
+  || process.env.CYBERDEV_DATABASE_URL
   || process.env.POSTGRES_URL_NON_POOLING
   || process.env.DATABASE_URL
   || process.env.POSTGRES_URL

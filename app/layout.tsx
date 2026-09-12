@@ -16,3 +16,4 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="id"><body><PrivacyConsent><PwaRegister />{children}</PrivacyConsent></body></html>;
 }
+

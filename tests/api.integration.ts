@@ -258,3 +258,4 @@ test("Google callback fails closed without credentials",async()=>{
   delete process.env.GOOGLE_CLIENT_SECRET;
   assert.equal((await callback(request("auth/google/callback?state=forged&code=forged"))).status,503);
 });
+

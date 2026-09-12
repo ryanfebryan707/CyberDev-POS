@@ -1,4 +1,4 @@
-# CyberDev POS 13 — Next.js / Vercel / PostgreSQL
+# CyberDev POS 13 — Next.js / Cloudflare / PostgreSQL
 
 Perbaikan dari arsip v12.1. Server Cloudflare D1 telah diganti dengan Next.js dan PostgreSQL. Katalog toko baru dimulai kosong. Aplikasi tidak menanam password admin di source code.
 
@@ -16,6 +16,20 @@ Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (minimal 12 ka
 4. Jalankan `npm run verify`. Deploy preview, periksa `/api/health`, login dan alur kasir, kemudian deploy production. Gunakan database preview terpisah untuk pengujian.
 5. Setelah Admin pertama berhasil masuk, segera ganti password menjadi minimal 12 karakter dari menu Keamanan Akun, hapus `ADMIN_BOOTSTRAP_PASSWORD` dari environment, dan redeploy.
 
+## Deployment Cloudflare Workers
+
+Project juga mempunyai target Cloudflare Workers melalui `vinext`, tanpa menghapus target Next.js standar untuk Vercel/Netlify. Source telah lolos `vinext check` dan build Worker dapat diperiksa dengan `npm run verify:cloudflare`.
+
+1. Gunakan Worker bernama `cyberdev-pos`, Node compatibility, Smart Placement, dan Workers Logs sebagaimana didefinisikan di `wrangler.jsonc`.
+2. Hubungkan Neon melalui binding Hyperdrive bernama `HYPERDRIVE`. Buat Hyperdrive memakai connection string Neon **direct/unpooled**; aplikasinya sendiri menerima connection string sementara dari binding dan membuka satu client PostgreSQL per request.
+3. Bila Hyperdrive belum tersedia, simpan URL Neon pooled sebagai Worker Secret `CYBERDEV_DATABASE_URL`. Jangan menulis URL database di `wrangler.jsonc` atau GitHub.
+4. Simpan `CYBERDEV_ADMIN_BOOTSTRAP_PASSWORD` sebagai Worker Secret hanya sampai login Admin pertama berhasil. Atur `APP_URL=https://cyberdev.my.id` dan `GOOGLE_CLIENT_ID` sebagai variable production. Tombol Google utama tidak membutuhkan Client Secret.
+5. Deploy awal ke hostname `workers.dev`, periksa `/api/health`, lalu hubungkan custom domain setelah Worker lolos uji.
+6. Tambahkan zone `cyberdev.my.id` ke Cloudflare dan ganti nameserver domain di Domainesia sesuai dua nameserver yang diberikan Cloudflare. Setelah zone aktif, tambahkan Custom Domain `cyberdev.my.id` ke Worker dan buat redirect `www` ke domain utama bila diperlukan.
+7. Di OAuth client Google **Web client 1**, tambahkan Authorized JavaScript origin persis `https://cyberdev.my.id`. Callback `https://cyberdev.my.id/api/auth/google/callback` hanya perlu untuk alur authorization-code lama.
+
+Cloudflare dan Neon tetap bergantung pada akun, kuota, pembaruan software, dan perpanjangan domain. Tidak ada hosting yang dapat menjamin layanan hidup selamanya tanpa pemeliharaan dan backup.
+
 ### Checklist environment production
 
 - Buka **Vercel → cyber-dev-pos → Settings → Environment Variables**. `DATABASE_URL` dan `DATABASE_URL_UNPOOLED` harus dipasang untuk **Production**, bukan hanya tersimpan pada proyek Neon, integrasi Development, atau project Vercel lain.
@@ -30,8 +44,8 @@ Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (minimal 12 ka
 Login Client utama memakai tombol resmi Google Identity Services. ID token diverifikasi di server (tanda tangan, issuer, audience, expiry, email terverifikasi, serta nonce sekali pakai yang terikat cookie). Token akses Google tidak diminta atau disimpan. Jalur OAuth authorization-code lama tetap tersedia sebagai kompatibilitas opsional, tetapi tidak dipakai oleh tombol login utama.
 
 - Di Google Cloud / Google Auth Platform, pilih proyek milik pengelola dan siapkan consent screen.
-- Buat OAuth client bertipe Web application. Untuk tombol Google Identity Services, tambahkan authorized JavaScript origin **persis** `https://cyber-dev-pos.vercel.app`.
-- Redirect URI `https://cyber-dev-pos.vercel.app/api/auth/google/callback` hanya diperlukan bila jalur authorization-code lama juga akan digunakan.
+- Buat OAuth client bertipe Web application. Untuk tombol Google Identity Services, tambahkan authorized JavaScript origin **persis** untuk setiap domain production yang aktif, terutama `https://cyberdev.my.id`.
+- Redirect URI `https://cyberdev.my.id/api/auth/google/callback` hanya diperlukan bila jalur authorization-code lama juga akan digunakan.
 - Client Secret berbeda dari Client ID dan tidak boleh ditempel ke source code, commit GitHub, atau percakapan.
 - Client ID CyberDev mempunyai fallback publik di kode; `GOOGLE_CLIENT_ID` tetap dapat digunakan untuk override. Tombol utama tidak memerlukan Client Secret. Jika jalur OAuth lama digunakan, `GOOGLE_CLIENT_SECRET` harus berupa secret asli yang berbeda dari Client ID dan hanya disimpan sebagai Secret server Vercel.
 - Setelah mengubah origin atau environment, lakukan deployment baru. Jangan mengklaim koneksi Google selesai sebelum login nyata berhasil.

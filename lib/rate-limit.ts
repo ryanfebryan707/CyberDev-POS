@@ -7,3 +7,4 @@ export async function rateLimit(request: Request, scope:string, limit:number, wi
   const row=await env.DB.prepare("INSERT INTO auth_login_attempts(key_hash,attempts,window_started_at,updated_at) VALUES (?,1,?,?) ON CONFLICT(key_hash) DO UPDATE SET attempts=auth_login_attempts.attempts+1,updated_at=excluded.updated_at RETURNING attempts").bind(key,now,now).first<{attempts:number}>();
   if(Number(row?.attempts)>limit)throw new HttpError(429,"Terlalu banyak permintaan. Coba lagi nanti.");
 }
+

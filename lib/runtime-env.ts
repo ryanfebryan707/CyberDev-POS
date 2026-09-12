@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Pool, types } from "pg";
+import { Client, Pool, types } from "pg";
 
 types.setTypeParser(20, Number);
 types.setTypeParser(1700, Number);
@@ -7,6 +7,12 @@ type Row = Record<string, unknown>;
 type QueryResult = { rows: Row[]; rowCount?: number | null; affectedRows?: number };
 type Connection = { query: (sql: string, values?: unknown[]) => Promise<QueryResult> };
 const context = new AsyncLocalStorage<Connection>();
+type RequestDatabase = {
+  connectionString: string;
+  client?: Client;
+  connecting?: Promise<Client>;
+};
+const requestDatabase = new AsyncLocalStorage<RequestDatabase>();
 let pool: Pool | undefined;
 let local: Promise<import("@electric-sql/pglite").PGlite> | undefined;
 
@@ -21,7 +27,9 @@ function databaseUrlFromParts() {
 }
 
 function configuredDatabaseUrl() {
-  return process.env.DATABASE_URL
+  return requestDatabase.getStore()?.connectionString
+    || process.env.CYBERDEV_DATABASE_URL
+    || process.env.DATABASE_URL
     || process.env.POSTGRES_URL
     || process.env.POSTGRES_PRISMA_URL
     || process.env.DATABASE_URL_UNPOOLED
@@ -29,6 +37,40 @@ function configuredDatabaseUrl() {
     || process.env.NEON_DATABASE_URL
     || databaseUrlFromParts()
     || "";
+}
+
+async function requestConnection() {
+  const state = requestDatabase.getStore();
+  if (!state) return null;
+  state.connecting ??= (async () => {
+    const client = new Client({
+      connectionString: state.connectionString,
+      connectionTimeoutMillis: 10000,
+    });
+    await client.connect();
+    state.client = client;
+    return client;
+  })();
+  return state.connecting;
+}
+
+export async function withRequestDatabaseUrl<T>(
+  connectionString: string | undefined,
+  work: () => Promise<T>
+) {
+  const value = connectionString?.trim();
+  if (!value) return work();
+  const state: RequestDatabase = { connectionString: value };
+  return requestDatabase.run(state, async () => {
+    try {
+      return await work();
+    } finally {
+      if (state.connecting) {
+        try { await (await state.connecting).end(); }
+        catch { /* The request is already complete; never hide its response. */ }
+      }
+    }
+  });
 }
 
 export function databaseConfigured() { return Boolean(configuredDatabaseUrl()); }
@@ -67,6 +109,8 @@ function getPool() {
 async function query(sql: string, values: unknown[] = []): Promise<QueryResult> {
   const connection = context.getStore();
   if (connection) return connection.query(sql, values);
+  const scopedConnection = await requestConnection();
+  if (scopedConnection) return scopedConnection.query(sql, values);
   if (configuredDatabaseUrl()) return getPool().query(sql, values);
   return (await localDb()).query(sql, values) as Promise<QueryResult>;
 }
@@ -77,17 +121,23 @@ export async function transaction<T>(work: () => Promise<T>): Promise<T> {
     const db = await localDb();
     return db.transaction(tx => context.run(tx as Connection, work));
   }
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    await client.query("SET LOCAL statement_timeout = '15s'");
-    const value = await context.run(client, work);
-    await client.query("COMMIT");
-    return value;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally { client.release(); }
+  const requestClient = await requestConnection();
+  const execute = async (client: Connection) => {
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL statement_timeout = '15s'");
+      const value = await context.run(client, work);
+      await client.query("COMMIT");
+      return value;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+  };
+  if (requestClient) return execute(requestClient);
+  const pooledClient = await getPool().connect();
+  try { return await execute(pooledClient); }
+  finally { pooledClient.release(); }
 }
 
 export class PreparedStatement {
@@ -116,7 +166,10 @@ export const database = {
 export const env = {
   DB: database,
   get ADMIN_EMAIL() { return process.env.ADMIN_EMAIL; },
-  get ADMIN_BOOTSTRAP_PASSWORD() { return process.env.ADMIN_BOOTSTRAP_PASSWORD; },
+  get ADMIN_BOOTSTRAP_PASSWORD() {
+    return process.env.CYBERDEV_ADMIN_BOOTSTRAP_PASSWORD
+      || process.env.ADMIN_BOOTSTRAP_PASSWORD;
+  },
   get ADMIN_PHONE_ALIASES() { return process.env.ADMIN_PHONE_ALIASES; },
 };
 
