@@ -23,7 +23,7 @@ type LoginAttempt = {
 };
 
 async function loginThrottleKey(request: Request, identifier: string) {
-  const ip = (request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0] || "unknown")
+  const ip = (request.headers.get("x-nf-client-connection-ip") || request.headers.get("cf-connecting-ip") || request.headers.get("x-vercel-forwarded-for") || request.headers.get("x-forwarded-for")?.split(",")[0] || "unknown")
     .trim()
     .slice(0, 80);
   return sha256(`${identifier.toLowerCase()}|${ip}`);

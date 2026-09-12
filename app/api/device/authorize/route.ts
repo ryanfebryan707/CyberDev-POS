@@ -4,7 +4,9 @@ import { authError, forbidden, getCurrentUser } from "@/lib/auth";
 
 function clientIp(request: Request) {
   return (
+    request.headers.get("x-nf-client-connection-ip") ||
     request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-vercel-forwarded-for") ||
     request.headers.get("x-real-ip") ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "tidak-tersedia"
