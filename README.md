@@ -74,6 +74,6 @@ Dokumentasi acuan: https://developers.google.com/identity/openid-connect/openid-
 
 ## Deployment alternatif Netlify
 
-Project ini mendukung Netlify melalui `netlify.toml`. Next.js App Router dan API Routes dijalankan menggunakan Netlify Next.js runtime, sedangkan data tetap berada di Neon PostgreSQL. Atur `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `APP_URL`, `GOOGLE_CLIENT_ID`, dan `ADMIN_BOOTSTRAP_PASSWORD` sebagai environment production Netlify. Build production menjalankan migrasi terlebih dahulu lalu `next build`. Jangan menyimpan connection string atau password di GitHub.
+Project ini mendukung Netlify melalui `netlify.toml`. Next.js App Router dan API Routes dijalankan menggunakan Netlify Next.js runtime, sedangkan data tetap berada di Neon PostgreSQL. Atur `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `APP_URL`, `GOOGLE_CLIENT_ID`, dan `ADMIN_BOOTSTRAP_PASSWORD` sebagai environment production Netlify. Jalankan `npm run db:migrate` secara terpisah sebelum deployment jika ada migrasi baru; build Netlify hanya menjalankan `next build` agar kredensial migrasi tidak diperlukan pada tahap build. Jangan menyimpan connection string atau password di GitHub.
 
 Untuk Google Identity Services pada domain Netlify, tambahkan origin HTTPS domain Netlify ke **Authorized JavaScript origins** pada OAuth client **Web client 1**. Redirect URI callback hanya diperlukan untuk jalur authorization-code lama.
