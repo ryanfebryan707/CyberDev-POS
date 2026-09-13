@@ -43,7 +43,7 @@ async function request(path, { method = "GET", body, cookie = "" } = {}) {
   const text = await response.text();
   let data = {};
   try { data = JSON.parse(text); } catch { data = { nonJson: true }; }
-  return { response, data, cookie: cookieFrom(response) };
+  return { response, data, text, cookie: cookieFrom(response) };
 }
 
 function expect(name, result, expectedStatus, predicate = () => true) {
@@ -87,6 +87,14 @@ for (const identifier of adminIdentifiers) {
 const adminDashboard = await request("/api/admin/clients", { cookie: adminCookie });
 expect("admin dashboard API", adminDashboard, 200, (data) => Array.isArray(data.clients));
 
+const lockedAdminPassword = await request("/api/auth/change-password", {
+  method: "POST",
+  cookie: adminCookie,
+  body: { currentPassword: adminPassword, newPassword: testPassword },
+});
+expect("production admin password lock", lockedAdminPassword, 403,
+  (data) => typeof data.error === "string" && data.error.includes("dikunci"));
+
 const demoRegister = await request("/api/auth/register", {
   method: "POST",
   body: {
@@ -117,6 +125,29 @@ expect("demo dashboard", demoDashboardBefore, 200, (data) =>
   && Array.isArray(data.lowProducts)
   && data.subscription?.hasAccess === true
 );
+
+const qrisPayload = "0002010102115204000053033605802ID5917CYBERDEV QA STORE6304ABCD";
+const qrisSettings = await request("/api/settings", {
+  method: "PATCH",
+  cookie: demoCookie,
+  body: {
+    storeName: "CyberDev Demo Verification Store",
+    businessType: "general",
+    address: "Production smoke test",
+    city: "Verification",
+    qrisMerchantName: "CyberDev QA Store",
+    qrisPayload,
+  },
+});
+expect("tenant connects QRIS merchant", qrisSettings, 200, (data) => data.ok === true);
+const qrisImage = await request("/api/qris", { cookie: demoCookie });
+expect("tenant QRIS renders scannable SVG", qrisImage, 200, () =>
+  qrisImage.response.headers.get("content-type")?.startsWith("image/svg+xml") === true
+  && qrisImage.text.includes("<svg")
+);
+const qrisMe = await request("/api/auth/me", { cookie: demoCookie });
+expect("tenant session reports QRIS connected", qrisMe, 200,
+  (data) => Number(data.user?.qrisConfigured) === 1 && data.user?.qrisMerchantName === "CyberDev QA Store");
 
 const product = await request("/api/products", {
   method: "POST",
