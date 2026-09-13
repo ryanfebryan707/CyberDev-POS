@@ -72,11 +72,71 @@ test("clients created by Admin can log in with either email or phone",async()=>{
   for(const [identifier,ip] of [[email,"admin-client-email"],[phone,"admin-client-phone"]] as const){
     const logged=await login.POST(request("auth/login","POST",{identifier,password},"",ip));
     assert.equal(logged.status,200,JSON.stringify(await logged.clone().json()));
-    const profile=await (await me.GET(request("auth/me","GET",undefined,session(logged)))).json();
+    const clientCookie=session(logged);
+    const profile=await (await me.GET(request("auth/me","GET",undefined,clientCookie))).json();
     assert.equal(profile.user.role,"owner");
     assert.equal(profile.user.tenantId,createdData.tenantId);
     assert.equal(profile.user.tenantStatus,"demo");
+    const clientDashboard=await dashboard.GET(request("dashboard","GET",undefined,clientCookie,`${ip}-dashboard`));
+    assert.equal(clientDashboard.status,200,JSON.stringify(await clientDashboard.clone().json()));
   }
+});
+test("Admin can permanently delete only the confirmed client and all tenant data",async()=>{
+  const email="delete-client@example.test",phone="083456789013",storeName="Delete Client Store";
+  const created=await admin.POST(request("admin/clients","POST",{
+    ownerName:"Delete Client Owner",storeName,email,phone,password,
+    planCode:"demo",businessType:"general",address:"QA Address",city:"QA City",
+  },adminCookie,"delete-client-create"));
+  assert.equal(created.status,201,JSON.stringify(await created.clone().json()));
+  const {tenantId:deleteTenant}=await created.json() as {tenantId:string};
+
+  const logged=await login.POST(request("auth/login","POST",{identifier:email,password},"","delete-client-login"));
+  assert.equal(logged.status,200,JSON.stringify(await logged.clone().json()));
+  const deleteCookie=session(logged);
+  const owner=await env.DB.prepare("SELECT id FROM users WHERE tenant_id=? AND role='owner'").bind(deleteTenant).first<{id:string}>();
+  assert.ok(owner?.id);
+  const product=await products.POST(request("products","POST",{name:"Disposable Product",category:"QA",barcode:"DELETE-01",price:5000,cost:2000,stock:3,unit:"pcs"},deleteCookie,"delete-product"));
+  assert.equal(product.status,201,JSON.stringify(await product.clone().json()));
+  const member=await customers.POST(request("customers","POST",{name:"Disposable Member",phone:"081234567890",email:"disposable-member@example.test"},deleteCookie,"delete-member"));
+  assert.equal(member.status,201,JSON.stringify(await member.clone().json()));
+  const payment=await billing.POST(request("billing","POST",{planCode:"monthly",method:"bri",reference:"DELETE QA"},deleteCookie,"delete-payment"));
+  assert.equal(payment.status,201,JSON.stringify(await payment.clone().json()));
+  const announcementId=crypto.randomUUID(),now=Date.now();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO oauth_accounts(provider,subject,user_id,created_at) VALUES ('google',?,?,?)").bind(`delete-${crypto.randomUUID()}`,owner.id,now),
+    env.DB.prepare("INSERT INTO oauth_states(state_hash,nonce,verifier,browser_hash,user_id,expires_at,intent) VALUES (?,?,?,?,?,?,'client')").bind(`delete-${crypto.randomUUID()}`,"nonce","verifier","browser",owner.id,now+60000),
+    env.DB.prepare("INSERT INTO announcements(id,title,message,audience,severity,is_active,expires_at,created_by,created_at) VALUES (?,?,?,?,?,1,NULL,?,?)").bind(announcementId,"Delete QA","Disposable","all","info",owner.id,now),
+    env.DB.prepare("INSERT INTO announcement_reads(id,announcement_id,user_id,read_at) VALUES (?,?,?,?)").bind(crypto.randomUUID(),announcementId,owner.id,now),
+  ]);
+
+  const wrong=await admin.DELETE(request("admin/clients","DELETE",{tenantId:deleteTenant,confirmation:"wrong"},adminCookie,"delete-client-wrong"));
+  assert.equal(wrong.status,400,JSON.stringify(await wrong.clone().json()));
+  assert.ok(await env.DB.prepare("SELECT id FROM tenants WHERE id=?").bind(deleteTenant).first());
+
+  const removed=await admin.DELETE(request("admin/clients","DELETE",{tenantId:deleteTenant,confirmation:storeName},adminCookie,"delete-client-confirmed"));
+  assert.equal(removed.status,200,JSON.stringify(await removed.clone().json()));
+  assert.deepEqual(await removed.json(),{ok:true,deleted:true,tenantId:deleteTenant});
+  for(const [table,column,value] of [
+    ["tenants","id",deleteTenant],
+    ["users","tenant_id",deleteTenant],
+    ["products","tenant_id",deleteTenant],
+    ["customers","tenant_id",deleteTenant],
+    ["payments","tenant_id",deleteTenant],
+    ["subscriptions","tenant_id",deleteTenant],
+    ["transactions","tenant_id",deleteTenant],
+    ["oauth_accounts","user_id",owner.id],
+    ["oauth_states","user_id",owner.id],
+    ["auth_sessions","user_id",owner.id],
+    ["announcements","created_by",owner.id],
+    ["announcement_reads","user_id",owner.id],
+  ] as const){
+    const row=await env.DB.prepare(`SELECT COUNT(*) AS total FROM ${table} WHERE ${column}=?`).bind(value).first<{total:number}>();
+    assert.equal(Number(row?.total||0),0,`${table} masih menyimpan data client yang dihapus`);
+  }
+  const audit=await env.DB.prepare("SELECT tenant_id AS tenantId,user_id AS userId FROM audit_logs WHERE action='CLIENT_DELETED' AND details LIKE ? ORDER BY created_at DESC LIMIT 1")
+    .bind(`%${storeName}%`).first<{tenantId:string|null;userId:string}>();
+  assert.equal(audit?.tenantId,null);assert.ok(audit?.userId);
+  assert.equal((await login.POST(request("auth/login","POST",{identifier:email,password},"","delete-client-after"))).status,401);
 });
 test("product CRUD and customer edits are isolated by tenant",async()=>{
   const response=await products.POST(request("products","POST",{name:"QA Product",category:"QA",barcode:"QA-01",price:10000,cost:4000,stock:2,unit:"pcs"},ownerCookie));
@@ -242,7 +302,23 @@ test("Google Identity config works without a client secret and is protected by n
   assert.equal(Number((await env.DB.prepare("SELECT COUNT(*) AS total FROM tenants").first<{total:number}>())?.total||0),tenantsBefore);
   const invalidConfig=await googleIdentity.GET(request("auth/google/identity","GET",undefined,"","google-identity-invalid-config"));
   const invalidCookie=session(invalidConfig);
-  const invalid=await googleIdentity.POST(request("auth/google/identity","POST",{credential:"x".repeat(100)},invalidCookie,"google-identity-post"));
+  const forwardedRequest=(origin:string,ip:string)=>new Request("http://internal:8080/api/auth/google/identity",{
+    method:"POST",
+    headers:{
+      origin,
+      host:"internal:8080",
+      "x-forwarded-host":"cyberdev-pos-app-production.up.railway.app",
+      "x-forwarded-proto":"https",
+      "sec-fetch-site":"same-origin",
+      "content-type":"application/json",
+      cookie:invalidCookie,
+      "x-forwarded-for":ip,
+    },
+    body:JSON.stringify({credential:"x".repeat(100)}),
+  });
+  const hostile=await googleIdentity.POST(forwardedRequest("https://evil.example.test","google-identity-hostile"));
+  assert.equal(hostile.status,403,JSON.stringify(await hostile.clone().json()));
+  const invalid=await googleIdentity.POST(forwardedRequest("https://cyberdev-pos-app-production.up.railway.app","google-identity-post"));
   assert.equal(invalid.status,401,JSON.stringify(await invalid.clone().json()));
   const replay=await googleIdentity.POST(request("auth/google/identity","POST",{credential:"x".repeat(100)},invalidCookie,"google-identity-replay"));
   assert.equal(replay.status,400);

@@ -4,12 +4,14 @@ import { generateKeyPair, SignJWT } from "jose";
 import { NextRequest } from "next/server";
 import { hashPassword, verifyPassword, validateLoginPassword, validatePassword, clearSessionCookie } from "../lib/auth";
 import { googleAppOrigin, googleConfigured, googleIdentityConfigured, verifyGoogleToken } from "../lib/google-auth";
+import { securePostgresConnectionString } from "../lib/postgres-connection";
 import { buildReceiptHtml } from "../lib/receipt";
 import { databaseConfigured, postgresQuery, withRequestDatabaseUrl } from "../lib/runtime-env";
 import { parseProductNumber } from "../lib/spreadsheet";
 import { proxy } from "../proxy";
 import nextConfig from "../next.config";
 import { createAccessConsent, parseAccessConsent } from "../lib/browser-consent";
+import { isSamePublicOrigin } from "../lib/request-origin";
 
 test("passwords have independent salts, verify correctly, and reject weak input",async()=>{
   const a=await hashPassword("CorrectLongPassword12"),b=await hashPassword("CorrectLongPassword12");
@@ -83,7 +85,9 @@ test("cross-origin, invalid JSON and oversized mutations are rejected",async()=>
     },
     body:"{}",
   });
-  assert.equal((await proxy(proxied("https://cyberdev-pos-web-production.up.railway.app"))).status,200);
+  const forwarded=proxied("https://cyberdev-pos-web-production.up.railway.app");
+  assert.equal(isSamePublicOrigin(forwarded),true);
+  assert.equal((await proxy(forwarded)).status,200);
   assert.equal((await proxy(proxied("https://evil.test"))).status,403);
   assert.equal((await proxy(proxied("https://cyberdev-pos-web-production.up.railway.app",{"sec-fetch-site":"cross-site"}))).status,403);
 });
@@ -109,4 +113,13 @@ test("database runtime recognizes hosting variables and a request-scoped Cloudfl
   process.env.PGHOST="localhost";process.env.PGUSER="qa";process.env.PGPASSWORD="qa";process.env.PGDATABASE="qa";
   assert.equal(databaseConfigured(),true);
   for(const key of keys){const value=previous[key];if(value===undefined)delete process.env[key];else process.env[key]=value;}
+});
+test("PostgreSQL URLs retain their target while using strict certificate verification",()=>{
+  const secured=securePostgresConnectionString("postgresql://user:p%40ss@ep-example.neon.tech/app?sslmode=require&channel_binding=require");
+  const url=new URL(secured);
+  assert.equal(url.hostname,"ep-example.neon.tech");
+  assert.equal(url.pathname,"/app");
+  assert.equal(url.password,"p%40ss");
+  assert.equal(url.searchParams.get("sslmode"),"verify-full");
+  assert.equal(url.searchParams.get("channel_binding"),"require");
 });

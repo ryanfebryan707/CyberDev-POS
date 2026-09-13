@@ -9,6 +9,7 @@ type GoogleIdentityApi = {
       initialize(config: {
         client_id: string;
         nonce: string;
+        login_hint?: string;
         callback: (response: CredentialResponse) => void;
         auto_select?: boolean;
         cancel_on_tap_outside?: boolean;
@@ -70,16 +71,22 @@ function loadGoogleIdentityScript() {
 export function GoogleIdentityButton({
   disabled = false,
   context = "signin",
+  loginHint,
   onSuccess,
 }: {
   disabled?: boolean;
   context?: "signin" | "link";
+  loginHint?: string;
   onSuccess?: () => void | Promise<void>;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const onSuccessRef = useRef(onSuccess);
   const [message, setMessage] = useState("Menyiapkan login Google...");
   const [ready, setReady] = useState(false);
+  const normalizedLoginHint = loginHint?.trim().toLowerCase();
+  const safeLoginHint = normalizedLoginHint && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedLoginHint)
+    ? normalizedLoginHint
+    : undefined;
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
 
   useEffect(() => {
@@ -107,6 +114,7 @@ export function GoogleIdentityButton({
         window.google.accounts.id.initialize({
           client_id: data.clientId,
           nonce: data.nonce,
+          ...(safeLoginHint ? { login_hint: safeLoginHint } : {}),
           auto_select: false,
           cancel_on_tap_outside: true,
           callback: responseData => {
@@ -158,7 +166,7 @@ export function GoogleIdentityButton({
       controller.abort();
       window.google?.accounts.id.cancel();
     };
-  }, [context, disabled]);
+  }, [context, disabled, safeLoginHint]);
 
   return <div className={`google-identity ${disabled ? "disabled" : ""}`} aria-busy={!ready}>
     <div ref={container} className="google-identity-button" />

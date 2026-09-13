@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Client, Pool, types } from "pg";
+import { securePostgresConnectionString } from "@/lib/postgres-connection";
 
 types.setTypeParser(20, Number);
 types.setTypeParser(1700, Number);
@@ -23,11 +24,11 @@ function databaseUrlFromParts() {
   const databaseName = process.env.PGDATABASE || process.env.POSTGRES_DATABASE;
   const port = process.env.PGPORT || "5432";
   if (!host || !user || !password || !databaseName) return "";
-  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(databaseName)}?sslmode=${encodeURIComponent(process.env.PGSSLMODE || "require")}`;
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(databaseName)}?sslmode=${encodeURIComponent(process.env.PGSSLMODE || "verify-full")}`;
 }
 
 function configuredDatabaseUrl() {
-  return requestDatabase.getStore()?.connectionString
+  const value = requestDatabase.getStore()?.connectionString
     || process.env.CYBERDEV_DATABASE_URL
     || process.env.DATABASE_URL
     || process.env.POSTGRES_URL
@@ -37,6 +38,7 @@ function configuredDatabaseUrl() {
     || process.env.NEON_DATABASE_URL
     || databaseUrlFromParts()
     || "";
+  return value ? securePostgresConnectionString(value) : "";
 }
 
 async function requestConnection() {
@@ -58,7 +60,8 @@ export async function withRequestDatabaseUrl<T>(
   connectionString: string | undefined,
   work: () => Promise<T>
 ) {
-  const value = connectionString?.trim();
+  const rawValue = connectionString?.trim();
+  const value = rawValue ? securePostgresConnectionString(rawValue) : "";
   if (!value) return work();
   const state: RequestDatabase = { connectionString: value };
   return requestDatabase.run(state, async () => {

@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
+import { securePostgresConnectionString } from "../lib/postgres-connection";
 
 function connectionStringFromParts() {
   const host=process.env.PGHOST || process.env.POSTGRES_HOST;
@@ -8,10 +9,10 @@ function connectionStringFromParts() {
   const database=process.env.PGDATABASE || process.env.POSTGRES_DATABASE;
   const port=process.env.PGPORT || "5432";
   if (!host || !user || !password || !database) return "";
-  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}?sslmode=${encodeURIComponent(process.env.PGSSLMODE || "require")}`;
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}?sslmode=${encodeURIComponent(process.env.PGSSLMODE || "verify-full")}`;
 }
 
-const connectionString=process.env.CYBERDEV_DATABASE_URL_UNPOOLED
+const configuredConnectionString=process.env.CYBERDEV_DATABASE_URL_UNPOOLED
   || process.env.DATABASE_URL_UNPOOLED
   || process.env.CYBERDEV_DATABASE_URL
   || process.env.POSTGRES_URL_NON_POOLING
@@ -20,7 +21,8 @@ const connectionString=process.env.CYBERDEV_DATABASE_URL_UNPOOLED
   || process.env.POSTGRES_PRISMA_URL
   || process.env.NEON_DATABASE_URL
   || connectionStringFromParts();
-if (!connectionString) throw new Error("Set a supported PostgreSQL connection variable before migration.");
+if (!configuredConnectionString) throw new Error("Set a supported PostgreSQL connection variable before migration.");
+const connectionString=securePostgresConnectionString(configuredConnectionString);
 const pool = new Pool({connectionString, max: 1, connectionTimeoutMillis: 15000});
 const client = await pool.connect();
 try {

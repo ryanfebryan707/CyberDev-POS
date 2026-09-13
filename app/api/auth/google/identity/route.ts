@@ -4,6 +4,7 @@ import { getCurrentUser, sha256 } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { completeGoogleIdentityLogin, googleClientId, googleCookie, googleIdentityConfigured, randomToken } from "@/lib/google-auth";
 import { HttpError, jsonBody, safeRoute } from "@/lib/http";
+import { isSamePublicOrigin } from "@/lib/request-origin";
 
 const credentialSchema = z.object({ credential: z.string().min(100).max(12000) }).strict();
 
@@ -26,8 +27,7 @@ export const POST = safeRoute(async request => {
   if (!databaseRuntimeAvailable()) throw new HttpError(503,"Database production belum terhubung pada hosting.");
   await rateLimit(request,"google-identity-login",30,900000);
   if (!googleIdentityConfigured()) throw new HttpError(503,"Login Google belum diaktifkan.");
-  const origin = request.headers.get("origin");
-  if (!origin || origin !== new URL(request.url).origin || request.headers.get("sec-fetch-site") === "cross-site") {
+  if (!isSamePublicOrigin(request)) {
     throw new HttpError(403,"Asal permintaan tidak diizinkan.");
   }
   const {credential} = await jsonBody(request,credentialSchema);

@@ -1,4 +1,4 @@
-import { safeRoute } from "@/lib/http";
+import { HttpError, safeRoute } from "@/lib/http";
 import { env, type PreparedStatement } from "@/lib/runtime-env";
 import {
   authError,
@@ -355,7 +355,52 @@ async function PATCHHandler(request: Request) {
   }
 }
 
+async function DELETEHandler(request: Request) {
+  const auth = await requireAdmin(request);
+  if (auth.response) return auth.response;
+  if (!auth.user) return authError();
+  const body = (await request.json()) as { tenantId?: string; confirmation?: string };
+  const tenantId = body.tenantId?.trim() || "";
+  if (!tenantId) return Response.json({ error: "Client tidak ditemukan." }, { status: 400 });
+  const tenant = await env.DB.prepare("SELECT id, name, owner_email AS ownerEmail FROM tenants WHERE id = ?")
+    .bind(tenantId).first<{ id: string; name: string; ownerEmail: string }>();
+  if (!tenant) return Response.json({ error: "Client tidak ditemukan." }, { status: 404 });
+  if ((body.confirmation || "").trim() !== tenant.name) {
+    return Response.json({ error: `Ketik nama toko "${tenant.name}" untuk mengonfirmasi penghapusan permanen.` }, { status: 400 });
+  }
+
+  const now = Date.now();
+  await env.DB.transaction(async () => {
+    const current = await env.DB.prepare("SELECT id, name, owner_email AS ownerEmail FROM tenants WHERE id = ?")
+      .bind(tenantId).first<{ id: string; name: string; ownerEmail: string }>();
+    if (!current) throw new HttpError(404, "Client tidak ditemukan.");
+    if ((body.confirmation || "").trim() !== current.name) throw new HttpError(409, "Nama toko berubah. Muat ulang sebelum menghapus.");
+    const tenantUsers = "SELECT id FROM users WHERE tenant_id = ?";
+    const tenantAnnouncements = `SELECT id FROM announcements WHERE created_by IN (${tenantUsers})`;
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM announcement_reads WHERE user_id IN (${tenantUsers}) OR announcement_id IN (${tenantAnnouncements})`).bind(tenantId, tenantId),
+      env.DB.prepare(`DELETE FROM announcements WHERE created_by IN (${tenantUsers})`).bind(tenantId),
+      env.DB.prepare(`DELETE FROM oauth_states WHERE user_id IN (${tenantUsers})`).bind(tenantId),
+      env.DB.prepare(`DELETE FROM oauth_accounts WHERE user_id IN (${tenantUsers})`).bind(tenantId),
+      env.DB.prepare(`DELETE FROM auth_sessions WHERE user_id IN (${tenantUsers})`).bind(tenantId),
+      env.DB.prepare("DELETE FROM transaction_items WHERE transaction_id IN (SELECT id FROM transactions WHERE tenant_id = ?)").bind(tenantId),
+      env.DB.prepare("DELETE FROM transactions WHERE tenant_id = ?").bind(tenantId),
+      env.DB.prepare("DELETE FROM products WHERE tenant_id = ?").bind(tenantId),
+      env.DB.prepare("DELETE FROM customers WHERE tenant_id = ?").bind(tenantId),
+      env.DB.prepare("DELETE FROM subscriptions WHERE tenant_id = ?").bind(tenantId),
+      env.DB.prepare("DELETE FROM payments WHERE tenant_id = ?").bind(tenantId),
+      env.DB.prepare(`DELETE FROM audit_logs WHERE tenant_id = ? OR user_id IN (${tenantUsers})`).bind(tenantId, tenantId),
+      env.DB.prepare("DELETE FROM users WHERE tenant_id = ?").bind(tenantId),
+      env.DB.prepare("DELETE FROM tenants WHERE id = ?").bind(tenantId),
+      env.DB.prepare(
+        "INSERT INTO audit_logs (id, tenant_id, user_id, action, details, created_at) VALUES (?, NULL, ?, 'CLIENT_DELETED', ?, ?)"
+      ).bind(crypto.randomUUID(), auth.user.id, `Client ${current.name} (${current.ownerEmail}) beserta seluruh data tenant dihapus permanen oleh Super-Admin.`, now),
+    ]);
+  });
+  return Response.json({ ok: true, deleted: true, tenantId });
+}
+
 export const GET = safeRoute(GETHandler);
 export const POST = safeRoute(POSTHandler);
 export const PATCH = safeRoute(PATCHHandler);
-
+export const DELETE = safeRoute(DELETEHandler);
