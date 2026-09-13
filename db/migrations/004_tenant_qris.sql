@@ -1,0 +1,2 @@
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS qris_merchant_name TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS qris_payload TEXT;

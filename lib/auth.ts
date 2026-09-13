@@ -35,6 +35,8 @@ export type AuthUser = {
   locationConsentAt: number | null;
   deviceAuthorizedAt: number | null;
   lastIp: string | null;
+  qrisConfigured: number | null;
+  qrisMerchantName: string | null;
 };
 
 function bytesToHex(bytes: Uint8Array) {
@@ -166,7 +168,9 @@ export async function getCurrentUser(request: Request): Promise<AuthUser | null>
       t.demo_expires_at AS demoExpiresAt, t.active_until AS activeUntil,
       t.address, t.city, t.latitude, t.longitude,
       t.location_accuracy AS locationAccuracy, t.location_consent_at AS locationConsentAt,
-      t.device_authorized_at AS deviceAuthorizedAt, t.last_ip AS lastIp
+      t.device_authorized_at AS deviceAuthorizedAt, t.last_ip AS lastIp,
+      CASE WHEN NULLIF(t.qris_payload, '') IS NULL THEN 0 ELSE 1 END AS qrisConfigured,
+      t.qris_merchant_name AS qrisMerchantName
      FROM auth_sessions s
      JOIN users u ON u.id = s.user_id
      LEFT JOIN tenants t ON t.id = u.tenant_id

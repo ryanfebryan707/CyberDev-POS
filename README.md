@@ -6,7 +6,7 @@ Perbaikan dari arsip v12.1. Server Cloudflare D1 telah diganti dengan Next.js da
 
 Gunakan Node.js 22 atau 24. Jalankan `npm ci`, kemudian `npm run dev`. Tanpa DATABASE_URL, mode development memakai PostgreSQL PGlite di `.data/cyberdev`. Mode production **wajib** menggunakan PostgreSQL eksternal dan tidak pernah memakai database lokal sebagai fallback.
 
-Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (minimal 12 karakter sangat disarankan), serta `APP_URL=http://localhost:3000` dalam `.env.local`. Identitas login Admin production dikunci di `lib/admin-identity.ts`; password hanya disimpan sebagai hash di database dan dapat diganti dari dashboard. Login tetap menerima password lama maksimal 128 karakter agar akun lama dapat masuk lalu meningkatkan passwordnya. Bila record Super-Admin sudah dibuat tetapi `last_login_at` masih kosong, `ADMIN_BOOTSTRAP_PASSWORD` dapat memulihkan password tepat satu kali pada login pertama. Setelah login berhasil, jalur pemulihan itu otomatis tidak berlaku lagi.
+Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (minimal 12 karakter sangat disarankan), serta `APP_URL=http://localhost:3000` dalam `.env.local`. Identitas login Admin production dikunci di `lib/admin-identity.ts`; password hanya disimpan sebagai hash di database dan perubahan password Super-Admin dari dashboard diblokir pada production. Login Client tetap menerima password lama maksimal 128 karakter agar akun lama dapat masuk lalu meningkatkannya. Bila record Super-Admin sudah dibuat tetapi `last_login_at` masih kosong, `ADMIN_BOOTSTRAP_PASSWORD` dapat memulihkan password tepat satu kali pada login pertama. Setelah login berhasil, jalur pemulihan itu otomatis tidak berlaku lagi.
 
 ## Deployment Vercel
 
@@ -14,7 +14,7 @@ Untuk admin lokal, atur `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` (minimal 12 ka
 2. Isi environment server: `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `APP_URL` (origin HTTPS domain final, tanpa path), dan `ADMIN_BOOTSTRAP_PASSWORD` untuk bootstrap/pemulihan login pertama. Runtime juga mengenali format koneksi Vercel/Neon: `POSTGRES_URL`, `POSTGRES_PRISMA_URL`, `POSTGRES_URL_NON_POOLING`, `NEON_DATABASE_URL`, atau gabungan `PGHOST`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`. Tidak ada variabel rahasia dengan awalan `NEXT_PUBLIC_`.
 3. Untuk migrasi isi `DATABASE_URL_UNPOOLED` dengan koneksi langsung. Jalankan `npm run db:migrate`. Migrasi berada di `db/migrations`, tercatat pada `schema_migrations`, serta dijalankan dalam transaksi. Jangan gunakan skema SQL D1 versi lama pada PostgreSQL.
 4. Jalankan `npm run verify`. Deploy preview, periksa `/api/health`, login dan alur kasir, kemudian deploy production. Gunakan database preview terpisah untuk pengujian.
-5. Setelah Admin pertama berhasil masuk, segera ganti password menjadi minimal 12 karakter dari menu Keamanan Akun, hapus `ADMIN_BOOTSTRAP_PASSWORD` dari environment, dan redeploy.
+5. Setelah Admin pertama berhasil masuk, verifikasi ketiga identifier menuju akun yang sama. Password Super-Admin production dikelola lewat deployment/database dan tidak dapat diubah dari dashboard; Client tetap dapat mengganti passwordnya sendiri.
 
 ## Deployment Cloudflare Workers
 
@@ -62,12 +62,12 @@ Login Client utama memakai tombol resmi Google Identity Services. ID token diver
 - Produk tambah/edit, barcode, harga jual/modal, stok pecahan; impor CSV/XLSX dan ekspor XLSX.
 - Kasir dengan perhitungan harga di server, kunci baris stok, transaksi atomik dan idempotensi antrean offline.
 - Data pelanggan tambah/edit; akun kasir dan supervisor, perubahan role, aktivasi/nonaktif, pencabutan sesi.
-- Profil toko tersimpan; laporan penjualan bersih diskon, HPP, laba kotor, dan ekspor.
+- Profil toko dan QRIS merchant tersimpan; payload QRIS resmi dirender sebagai QR per-tenant tanpa menyimpan PIN/kredensial bank. Laporan mencakup penjualan bersih diskon, HPP, laba kotor, dan ekspor.
 - Billing transfer manual, status pending, verifikasi/aktivasi oleh superadmin, suspend, periode demo, audit, broadcast, reset data dengan konfirmasi nama toko.
 
 ## Batas implementasi dan operasi
 
-- QRIS, transfer, dan metode lain di kasir adalah **pencatatan pembayaran manual**. Belum ada konfirmasi otomatis dari payment gateway. Tidak ada integrasi WhatsApp Business API, marketplace, biometrik, loyalitas/poin, ataupun absensi yang sudah aktif.
+- Client dapat menempel payload QRIS merchant resmi agar QR dapat dipindai dari kasir. Konfirmasi pembayaran QRIS, transfer, dan metode lain tetap dilakukan kasir; rekonsiliasi otomatis memerlukan akun/credential payment gateway merchant yang belum disediakan. Tidak ada integrasi WhatsApp Business API, marketplace, biometrik, loyalitas/poin, ataupun absensi yang sudah aktif.
 - Lokasi dan IP mencatat persetujuan perangkat toko. Lokasi browser tidak membuktikan identitas perangkat dan tidak menjamin pencegahan GPS palsu.
 - Antrean offline dipisahkan menurut tenant. Transaksi yang ditolak server tetap tersimpan untuk rekonsiliasi, tidak dihitung sebagai berhasil tersinkron. Login pertama memerlukan internet. Stok serentak antarperangkat offline memerlukan rekonsiliasi ketika online.
 - Setelah login online dan katalog berhasil tersinkron, Client dapat membuka kembali PWA saat offline selama snapshot sesi perangkat masih valid (maksimal 7 hari dan tidak melewati masa Demo/langganan). Super-Admin tidak disimpan untuk akses offline; koordinat, IP, token sesi, dan password juga tidak pernah dimasukkan ke cache offline.

@@ -1,13 +1,16 @@
 import { rateLimit } from "@/lib/rate-limit";
 import { safeRoute } from "@/lib/http";
 import { env } from "@/lib/runtime-env";
-import { authError, getCurrentUser, hashPassword, validatePassword, verifyPassword } from "@/lib/auth";
+import { authError, forbidden, getCurrentUser, hashPassword, validatePassword, verifyPassword } from "@/lib/auth";
 
 type PasswordRow = { passwordHash: string; passwordSalt: string };
 
 async function POSTHandler(request: Request) {
   const user = await getCurrentUser(request);
   if (!user) return authError();
+  if ((process.env.NODE_ENV === "production" || process.env.CYBERDEV_ADMIN_PASSWORD_LOCKED === "1") && user.role === "superadmin") {
+    return forbidden("Password Super-Admin dikunci oleh konfigurasi production.");
+  }
   const body = (await request.json()) as { currentPassword?: string; newPassword?: string };
   const currentPassword = body.currentPassword || "";
   const newPassword = body.newPassword || "";

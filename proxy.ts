@@ -46,7 +46,7 @@ export async function proxy(request: NextRequest) {
       if (text) {
         const body = JSON.parse(text);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid body");
-        const strings = ["name","storeName","ownerName","email","identifier","phone","password","currentPassword","newPassword","address","city","businessType","tenantId","action","planCode","confirmation","category","barcode","unit","reference","method","title","message","audience","severity","announcementId","offlineId","paymentMethod","customerName","role","credential"];
+        const strings = ["name","storeName","ownerName","email","identifier","phone","password","currentPassword","newPassword","address","city","businessType","tenantId","action","planCode","confirmation","category","barcode","unit","reference","method","title","message","audience","severity","announcementId","offlineId","paymentMethod","customerName","role","credential","qrisMerchantName","qrisPayload"];
         for (const field of strings) if (field in body && typeof body[field] !== "string") throw new Error("Invalid field");
         for (const field of ["price","cost","stock","subtotal","tax","discount","total","amountReceived","dataRevision","expiresInDays"]) if (field in body && (typeof body[field] !== "number" || !Number.isFinite(body[field]) || Math.abs(body[field]) > 1000000000000)) throw new Error("Invalid number");
       }

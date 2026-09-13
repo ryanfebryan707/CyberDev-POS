@@ -130,6 +130,8 @@ type AppUser = {
   locationConsentAt: number | null;
   deviceAuthorizedAt: number | null;
   lastIp: string | null;
+  qrisConfigured: number | null;
+  qrisMerchantName: string | null;
 };
 
 function offlineSnapshot(user:AppUser):OfflineUserSnapshot|null {
@@ -151,7 +153,7 @@ function restoreOfflineUser(user:OfflineUserSnapshot):AppUser|null {
       : false;
   if(!accessValid)return null;
   return {
-    ...user,email:"",latitude:null,longitude:null,locationAccuracy:null,locationConsentAt:null,lastIp:null,
+    ...user,email:"",latitude:null,longitude:null,locationAccuracy:null,locationConsentAt:null,lastIp:null,qrisConfigured:null,qrisMerchantName:null,
   };
 }
 
@@ -677,7 +679,7 @@ function PosView({ user }: { user: AppUser }) {
           <div className="payment-options">{[["Tunai", CircleDollarSign], ["QRIS", QrCode], ["Kartu / EDC", CreditCard], ["E-Wallet", WalletCards], ["Transfer Bank", Building2], ["Lainnya", MoreHorizontal]].map(([name, I]) => { const Icon = I as IconType; return <button key={name as string} className={payment === name ? "selected" : ""} onClick={() => { setPayment(name as string);setPaymentError("");if(name==="Tunai")setCashReceived(String(total)); }}><Icon /><span>{name as string}</span>{payment === name && <Check />}</button>; })}</div>
           {payment === "Lainnya" && <label className="custom-payment">Nama metode pembayaran<input value={customPayment} onChange={(event)=>setCustomPayment(event.target.value)} maxLength={32} placeholder="Contoh: Voucher, Tempo, atau Marketplace" autoFocus/></label>}
           {payment === "Tunai" && <div className="cash-tender"><label>Uang diterima<div><span>Rp</span><input value={cashReceived} onChange={event=>setCashReceived(event.target.value.replace(/\D/g,""))} inputMode="numeric" autoFocus/></div></label><div className="cash-suggestions">{cashSuggestions.map(value=><button key={value} onClick={()=>setCashReceived(String(value))}>{value===total?"Uang pas":formatPrice(value)}</button>)}</div><div className={cashValue>=total?"cash-change ready":"cash-change"}><span>Kembalian</span><strong>{formatPrice(changeDue)}</strong><small>{cashValue>=total?"Siap selesaikan transaksi":"Uang diterima belum mencukupi"}</small></div></div>}
-          {payment === "QRIS" && <div className="qris-preview"><QrCode /><span><strong>QRIS dinamis siap dibuat</strong><small>Pelanggan memindai setelah konfirmasi</small></span></div>}
+          {payment === "QRIS" && (user.qrisConfigured ? <div className="qris-preview connected"><Image className="qris-code" src="/api/qris" alt={`QRIS ${user.qrisMerchantName||user.storeName||"toko"}`} width={180} height={180} unoptimized/><span><strong>QRIS {user.qrisMerchantName||user.storeName||"toko"} terhubung</strong><small>Pelanggan memindai QR resmi, memasukkan total {formatPrice(total)}, lalu kasir mengonfirmasi pembayaran.</small></span></div>:<div className="qris-preview"><QrCode /><span><strong>QRIS toko belum dihubungkan</strong><small>Pemilik dapat menempel payload QRIS resmi melalui menu Pengaturan. Transaksi masih dapat dicatat setelah pembayaran diverifikasi kasir.</small></span></div>)}
           {paymentError && <div className="auth-error">{paymentError}</div>}
           <div className="print-preferences"><label><input type="checkbox" checked={autoPrint} onChange={(event)=>setAutoPrint(event.target.checked)}/> Cetak otomatis melalui USB</label><label><input type="checkbox" checked={autoDrawer} onChange={(event)=>setAutoDrawer(event.target.checked)}/> Buka laci otomatis untuk tunai</label></div>
           <DialogFooter><Button variant="outline" onClick={() => setPaymentOpen(false)}>Batal</Button><Button className="confirm-payment" disabled={savingPayment||(payment==="Tunai"&&cashValue<total)||(payment==="Lainnya"&&!customPayment.trim())} onClick={confirmPayment}>{savingPayment ? "Menyimpan..." : `Konfirmasi ${resolvedPayment}`}</Button></DialogFooter>
@@ -1011,7 +1013,7 @@ function AdminView({ onLogout }: { onLogout: () => void }) {
   const capacityUse = Math.min(100, Math.round((Number(data.stats.total || 0) / Number(data.stats.capacity || 2000)) * 100));
   const authorizedRate = data.stats.active ? Math.round((Number(data.stats.authorizedDevices || 0) / Number(data.stats.active)) * 100) : 0;
   return <div className="view-stack">
-    <section className="admin-hero"><div><span><Crown /> SUPER-ADMIN PUSAT • DATA LANGSUNG</span><h2>Kontrol SaaS CyberDev POS</h2><p>Kelola hingga 2.000 client, pembayaran, lokasi, paket, transaksi, pemberitahuan, dan akses setiap toko secara terisolasi.</p></div><div className="admin-hero-actions"><Button onClick={openCreate}><UserPlus/> Tambah client</Button><button onClick={()=>{setBroadcastMessage("");setBroadcastOpen(true);}}><Megaphone/> Kirim pemberitahuan</button><button onClick={()=>setPasswordOpen(true)}><ShieldCheck /> Ganti password</button></div></section>
+    <section className="admin-hero"><div><span><Crown /> SUPER-ADMIN PUSAT • DATA LANGSUNG</span><h2>Kontrol SaaS CyberDev POS</h2><p>Kelola hingga 2.000 client, pembayaran, lokasi, paket, transaksi, pemberitahuan, dan akses setiap toko secara terisolasi.</p></div><div className="admin-hero-actions"><Button onClick={openCreate}><UserPlus/> Tambah client</Button><button onClick={()=>{setBroadcastMessage("");setBroadcastOpen(true);}}><Megaphone/> Kirim pemberitahuan</button><button disabled title="Dikunci oleh konfigurasi production"><ShieldCheck /> Password terkunci</button></div></section>
     {adminMessage&&<div className="admin-notice"><BadgeCheck/>{adminMessage}</div>}
     <section className="stats-grid compact"><StatCard label="Seluruh client" value={String(data.stats.total||0)} change={"dari "+String(data.stats.capacity||2000)+" kapasitas"} context="" icon={Building2} tone="violet" /><StatCard label="Client aktif" value={String(data.stats.active||0)} change="berlangganan" context="" icon={BadgeCheck} tone="green" /><StatCard label="Sedang demo" value={String(data.stats.demo||0)} change="uji coba 14 hari" context="" icon={Clock3} tone="blue" /><StatCard label="Revenue terverifikasi" value={formatPrice(Number(data.stats.revenue||0))} change="pembayaran" context="" icon={CircleDollarSign} tone="orange" /></section>
     <section className="admin-operations-grid">
@@ -1184,7 +1186,7 @@ function LoginView({ onAuthenticated }: { onAuthenticated: (user: AppUser) => vo
         {error && <div className="auth-error">{error}</div>}
         <Button className={`login-submit ${mode==="admin"?"admin-auth-mode":""}`} disabled={loading} onClick={submit}>{loading ? "Memproses akun..." : mode === "register" ? "Daftar & mulai demo" : mode==="admin" ? "Masuk dashboard admin" : "Masuk dashboard client"} <ArrowRight /></Button>
         {mode === "client"&&<><GoogleIdentityButton disabled={loading} onSuccess={finishGoogleLogin}/><p className="google-registration-note">Google hanya dapat masuk bila alamat Gmail yang sama sudah terdaftar melalui Demo manual atau dibuat oleh Admin.</p></>}
-        {mode === "admin" && <div className="admin-login-hint"><div><Crown/><span><strong>Hanya dua nomor resmi & satu email admin</strong><small>Login Google dinonaktifkan untuk Admin. Password dapat diganti dari dashboard.</small></span></div><button onClick={() => setIdentifier(ADMIN_LOGIN_EMAIL)}>Email admin</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[0])}>WA 0822…</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[1])}>WA 0852…</button></div>}
+        {mode === "admin" && <div className="admin-login-hint"><div><Crown/><span><strong>Hanya dua nomor resmi & satu email admin</strong><small>Login Google dinonaktifkan untuk Admin. Password dikunci oleh konfigurasi production.</small></span></div><button onClick={() => setIdentifier(ADMIN_LOGIN_EMAIL)}>Email admin</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[0])}>WA 0822…</button><button onClick={() => setIdentifier(ADMIN_LOGIN_PHONES[1])}>WA 0852…</button></div>}
         {mode === "register" && <p className="signup-copy">Sudah punya akun? <button onClick={() => setMode("client")}>Login Client</button></p>}
         <div className="login-assurance"><span><ShieldCheck /> Data terenkripsi</span><span><CloudOff /> Siap offline</span><span><Headphones /> CS 082244837977 / 085234005206</span></div>
       </div>
@@ -1276,4 +1278,3 @@ export function CyberDevPos() {
   if (!user) return <LoginView onAuthenticated={authenticated} />;
   return <div className={`app-shell ${dark ? "theme-dark" : ""}`}><Sidebar view={view} setView={setView} open={menuOpen} onClose={() => setMenuOpen(false)} user={user} onLogout={logout} /><main className="main-shell"><Topbar title={user.role==="superadmin"?"Super Admin":titles[view]} dark={dark} setDark={setDark} onMenu={() => setMenuOpen(true)} user={user} onLogout={logout} /><div className={`page-content ${view === "pos" ? "pos-content" : ""}`}>{page}</div></main>{user.role!=="superadmin"&&<nav className="mobile-nav">{[["overview","Beranda",LayoutDashboard],["pos","Kasir",ShoppingCart],["products","Produk",Package],["reports","Laporan",BarChart3]].map(([id,label,I])=>{const Icon=I as IconType; return <button key={id as string} onClick={()=>setView(id as View)} className={view===id?"active":""}><Icon /><span>{label as string}</span></button>})}<button onClick={()=>setMenuOpen(true)}><Menu /><span>Lainnya</span></button></nav>}</div>;
 }
-

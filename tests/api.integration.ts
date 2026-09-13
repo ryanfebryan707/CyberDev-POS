@@ -22,6 +22,7 @@ import * as reports from "../app/api/reports/route";
 import * as billing from "../app/api/billing/route";
 import * as device from "../app/api/device/authorize/route";
 import * as settings from "../app/api/settings/route";
+import * as qris from "../app/api/qris/route";
 import * as notifications from "../app/api/notifications/route";
 import * as imports from "../app/api/products/import/route";
 import { GET as startGoogle } from "../app/api/auth/google/route";
@@ -55,7 +56,7 @@ before(async()=>{
 after(async()=>{await closeDatabase();await rm(directory,{recursive:true,force:true});});
 
 test("new owners start with empty stock; private APIs reject anonymous and cross-role access",async()=>{
-  for(const route of [products,dashboard,admin,adminProducts,customers,staff,settings,billing,notifications])assert.equal((await route.GET(request("test"))).status,401);
+  for(const route of [products,dashboard,admin,adminProducts,customers,staff,settings,qris,billing,notifications])assert.equal((await route.GET(request("test"))).status,401);
   assert.equal((await admin.GET(request("admin/clients","GET",undefined,ownerCookie))).status,403);
   assert.deepEqual((await (await products.GET(request("products","GET",undefined,ownerCookie))).json()).products,[]);
 });
@@ -131,7 +132,11 @@ test("staff permissions block privilege escalation; disabling staff revokes sess
 });
 test("imports, notifications, settings and admin endpoints execute against PostgreSQL",async()=>{
   const imported=await imports.POST(request("products/import","POST",{products:[{name:"Fractional stock",barcode:"QA-IMP",price:12000,cost:5000,stock:1.5,unit:"kg"}]},ownerCookie));assert.equal(imported.status,201,JSON.stringify(await imported.clone().json()));
-  assert.equal((await settings.PATCH(request("settings","PATCH",{storeName:"Updated QA Store",businessType:"general",address:"Test",city:"QA"},ownerCookie))).status,200);
+  const qrisPayload="0002010102115204000053033605802ID5908QA STORE6304ABCD";
+  assert.equal((await settings.PATCH(request("settings","PATCH",{storeName:"Updated QA Store",businessType:"general",address:"Test",city:"QA",qrisMerchantName:"QA Store",qrisPayload},ownerCookie))).status,200);
+  const savedSettings=await (await settings.GET(request("settings","GET",undefined,ownerCookie))).json();
+  assert.equal(savedSettings.qris.configured,true);assert.equal(savedSettings.qris.merchantName,"QA Store");assert.equal(savedSettings.qris.payload,qrisPayload);
+  const qrisImage=await qris.GET(request("qris","GET",undefined,ownerCookie));assert.equal(qrisImage.status,200);assert.match(qrisImage.headers.get("content-type")||"",/^image\/svg\+xml/);assert.match(await qrisImage.text(),/<svg/);
   const sent=await notifications.POST(request("notifications","POST",{title:"QA Notice",message:"Test announcement",audience:"all"},adminCookie));assert.equal(sent.status,201);const id=(await sent.json()).id;
   assert.equal((await notifications.PATCH(request("notifications","PATCH",{action:"read",announcementId:id},ownerCookie))).status,200);
   const notices=await (await notifications.GET(request("notifications","GET",undefined,ownerCookie))).json();assert.equal(Number(notices.unread),0);
@@ -150,6 +155,16 @@ test("password changes and logout revoke cookies; brute-force is throttled",asyn
   assert.equal((await login.POST(request("auth/login","POST",{identifier:"missing@example.test",password},"","throttle"))).status,429);
   assert.equal((await logout.POST(request("auth/logout","POST",{},ownerCookie))).status,200);
   assert.equal((await (await me.GET(request("auth/me","GET",undefined,ownerCookie))).json()).user,null);
+});
+test("production Super-Admin password cannot be changed from the dashboard",async()=>{
+  const previous=process.env.CYBERDEV_ADMIN_PASSWORD_LOCKED;
+  process.env.CYBERDEV_ADMIN_PASSWORD_LOCKED="1";
+  try {
+    const response=await passwords.POST(request("auth/change-password","POST",{currentPassword:password,newPassword:password+"3"},adminCookie,"admin-password-lock"));
+    assert.equal(response.status,403,JSON.stringify(await response.clone().json()));
+  } finally {
+    if(previous===undefined)delete process.env.CYBERDEV_ADMIN_PASSWORD_LOCKED;else process.env.CYBERDEV_ADMIN_PASSWORD_LOCKED=previous;
+  }
 });
 test("an existing legacy-length password can authenticate and then be upgraded",async()=>{
   const previous={email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_BOOTSTRAP_PASSWORD,phones:process.env.ADMIN_PHONE_ALIASES};
@@ -258,4 +273,3 @@ test("Google callback fails closed without credentials",async()=>{
   delete process.env.GOOGLE_CLIENT_SECRET;
   assert.equal((await callback(request("auth/google/callback?state=forged&code=forged"))).status,503);
 });
-

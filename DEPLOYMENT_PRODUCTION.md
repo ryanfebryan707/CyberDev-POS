@@ -57,7 +57,7 @@ Urutan deployment Cloudflare:
 6. Tambahkan zone `cyberdev.my.id` ke Cloudflare. Di Domainesia, ganti nameserver dengan nameserver yang diberikan Cloudflare; jangan menebak nilainya.
 7. Setelah zone berstatus Active, tambahkan `cyberdev.my.id` sebagai Custom Domain Worker. Cloudflare membuat record DNS dan sertifikat TLS. Atur redirect `www.cyberdev.my.id` ke domain utama bila `www` akan dipakai.
 8. Ubah `APP_URL` menjadi `https://cyberdev.my.id`, redeploy, dan ulangi seluruh smoke test pada domain final.
-9. Setelah Admin berhasil login dan mengganti password, hapus secret bootstrap lalu deploy lagi.
+9. Setelah Admin berhasil login, verifikasi email dan kedua nomor resmi menuju akun Super-Admin yang sama. Perubahan password Super-Admin dari dashboard diblokir pada production.
 
 ## 3. Pemulihan login Admin pertama
 
@@ -66,7 +66,7 @@ Urutan deployment Cloudflare:
 3. Redeploy production.
 4. Masuk melalui tab **Login Admin** memakai email atau salah satu nomor resmi dan secret tersebut.
 5. Jika record Admin lama sudah ada tetapi belum pernah berhasil login, sistem mengganti hash lama tepat satu kali, mengakhiri sesi lama, dan menulis audit `ADMIN_FIRST_LOGIN_RECOVERED`.
-6. Buka **Keamanan Akun → Ganti password**, gunakan password kuat baru, lalu hapus secret bootstrap dari hosting dan redeploy.
+6. Pada production, password Super-Admin tidak dapat diubah dari dashboard. Perubahan terkontrol harus dilakukan oleh operator melalui hash database/deployment, kemudian seluruh sesi lama dicabut.
 
 Pemulihan otomatis sengaja tidak berlaku jika Admin pernah berhasil login (`last_login_at` sudah terisi). Ini mencegah environment bootstrap menjadi master password permanen.
 
@@ -114,7 +114,7 @@ Setelah deploy, lakukan pemeriksaan berikut dengan akun QA, bukan data pelanggan
 3. Admin membuat Client Demo, kemudian Client login via email dan WhatsApp.
 4. Client tersebut logout lalu login dengan Gmail yang sama; Gmail asing harus ditolak.
 5. Form Demo manual membuat toko kosong dan langsung membuka dashboard.
-6. Tambah produk, lakukan transaksi tunai dan QRIS manual, pastikan stok turun satu kali, struk tampil, dashboard/laporan sesuai.
+6. Tambah produk, hubungkan payload QRIS merchant resmi lewat Pengaturan, lalu lakukan transaksi tunai dan QRIS; pastikan QR tampil, stok turun satu kali, struk tampil, dan dashboard/laporan sesuai. Rekonsiliasi otomatis tetap memerlukan payment gateway merchant.
 7. Uji reload, logout, perangkat mobile, pemasangan PWA, mode offline setelah sinkronisasi awal, serta sinkronisasi ulang ketika online.
 8. Uji izin lokasi, kamera barcode, printer USB, dan laci kasir pada perangkat fisik yang benar-benar akan dipakai.
 9. Aktifkan Workers Logs, periksa error runtime, dan simpan prosedur pemulihan Neon sebelum membuka akses pelanggan.
